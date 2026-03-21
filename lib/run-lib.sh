@@ -177,8 +177,10 @@ EOF
   umask 022
 }
 
-# Start \`pnpm|yarn|npm run dev\` in the background with a free port and register it.
-# Usage: run_start_package_dev [service_name=web] [base_port|auto=auto] [extra args passed after dev --]
+# Start \`pnpm|yarn|npm run <script>\` in the background with a free port and register it.
+# Script name defaults to \`dev\`; set RUNCTL_PM_RUN_SCRIPT (e.g. dev:server) when \`dev\` is the runctl wrapper.
+# Legacy: RUN_RUNNER_PM_RUN_SCRIPT is still honored if RUNCTL_PM_RUN_SCRIPT is unset.
+# Usage: run_start_package_dev [service_name=web] [base_port|auto=auto] [extra args after script --]
 run_start_package_dev() {
   [[ -f "$RUN_PROJECT_ROOT/package.json" ]] || {
     echo "run_start_package_dev: no package.json in $RUN_PROJECT_ROOT" >&2
@@ -216,13 +218,14 @@ run_start_package_dev() {
   run_write_ports_env "$port" "$svc"
 
   local host="${HOST:-127.0.0.1}"
-  echo "run-lib: [$kind] starting dev on PORT=$port (service=$svc, pm=$pm)"
+  local pm_script="${RUNCTL_PM_RUN_SCRIPT:-${RUN_RUNNER_PM_RUN_SCRIPT:-dev}}"
+  echo "run-lib: [$kind] starting pm run $pm_script on PORT=$port (service=$svc, pm=$pm)"
   local pid
   pid="$(
     run_daemon_start "$svc" \
       bash -c 'cd "$1" && export PORT="$2" HOST="$3" && shift 3 && exec "$@"' \
       _ "$RUN_PROJECT_ROOT" "$port" "$host" \
-      "$pm" run dev -- "${dev_extra[@]}" "$@"
+      "$pm" run "$pm_script" -- "${dev_extra[@]}" "$@"
   )" || return 1
 
   run_port_register "$port" "$svc" "$pid"

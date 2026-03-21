@@ -12,7 +12,8 @@ Keep a **manifest** (not loaded directly by Next/Vite) that lists each real valu
 - Expand to a generated file that frameworks **do** load:
 
 ```bash
-node "$RUNNER_ROOT/scripts/expand-env-manifest.mjs" env.manifest --out .env.local
+pnpm exec runctl expand-env env.manifest --out .env.local
+# or: node node_modules/runctl/scripts/expand-env-manifest.mjs env.manifest --out .env.local
 ```
 
 Add **`.env.local`** (and optionally `.env.manifest` if it contains no secrets—usually it *does*, so keep the manifest **gitignored** or use a **`.env.manifest.example`** without real values).
@@ -72,7 +73,7 @@ Use this when shell scripts are not enough.
 
 Sometimes two env vars exist for historical reasons. If both client and server can read the **same** name (e.g. only `NEXT_PUBLIC_*` where acceptable), prefer **one** variable in Vercel and one line in the manifest.
 
-## 6. Relation to `Runner`’s `.run/ports.env`
+## 6. Relation to Runctl’s `.run/ports.env`
 
 [`.run/ports.env`](../README.md) is for **dev server `PORT` / `HOST`**, not for Vercel deployment. Keep deployment secrets in `.env.local` / Vercel / a manifest as above.
 

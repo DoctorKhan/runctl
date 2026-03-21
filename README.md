@@ -1,43 +1,82 @@
-# Runner
+# Runctl
 
-Lightweight **project `.run/`** + **user `~/.run/`** helpers: PID files, logs, a small **port → project** registry, and **optional `pnpm|yarn|npm run dev` wiring** for Vite, Next.js, Nuxt, Astro, Remix, or anything that only needs `PORT`. No daemon, no containers.
+Lightweight **project `.run/`** + **user `~/.run/`** helpers: PID files, logs, a small **port → project** registry, and **optional `pnpm|yarn|npm run dev` wiring** for Vite, Next.js, Nuxt, Astro, Remix, or anything that only needs `PORT`. **npm package:** `runctl` (CLI: **`runctl`**). No daemon, no containers.
+
+*(This git repo may still be named `Runner` on disk—that’s fine.)*
 
 ## Install once, use in every other repo
 
-You **do not** copy `lib/`, `scripts/`, and `docs/` into each application. Keep **one** Runner checkout (or one linked package); each app only needs a **short** `run.sh` (see [`examples/run.sh.example`](examples/run.sh.example)) that points at that install.
+You **do not** copy `lib/`, `scripts/`, and `docs/` into each application. Keep **one** Runctl install (clone or package); each app only needs a **short** `run.sh` (see [`examples/run.sh.example`](examples/run.sh.example)) or **`package.json` scripts** that call **`runctl`**.
 
 **Ways to expose the toolkit:**
 
 | Method | What you do | In each app’s `run.sh` |
 |--------|-------------|-------------------------|
-| **Global CLI** | From this directory: `pnpm link --global` (or add `bin/` to your `PATH`) | `source "$(runner lib-path)"` |
-| **Env var** | In `~/.zshrc`: `export RUNNER_HOME="$HOME/Documents/Projects/Runner"` | `source "$RUNNER_HOME/lib/run-lib.sh"` |
-| **Explicit path** | Nothing | `RUN_LIB=/path/to/Runner/lib/run-lib.sh` then `source "$RUN_LIB"` |
-| **pnpm dependency** | In an app: `pnpm add -D runner@file:../Runner` (adjust path) | `source "$PWD/node_modules/runner/lib/run-lib.sh"` (or `pnpm exec runner lib-path`) |
+| **Global CLI** | From this directory: `pnpm link --global` (or add `bin/` to your `PATH`) | `source "$(runctl lib-path)"` |
+| **Env var** | In `~/.zshrc`: `export RUNCTL_HOME="$HOME/Documents/Projects/Runner"` (path to this clone) | `source "$RUNCTL_HOME/lib/run-lib.sh"` |
+| **Explicit path** | Nothing | `RUN_LIB=/path/to/runctl/lib/run-lib.sh` then `source "$RUN_LIB"` |
+| **pnpm dependency** | In an app: `pnpm add -D runctl@file:../Runner` (adjust path) | `source "$PWD/node_modules/runctl/lib/run-lib.sh"` (or `pnpm exec runctl lib-path`) |
+| **package.json only** | Same dependency; **no `run.sh`** | Add `"scripts"` that call `runctl` (see below) |
 
-The **`runner`** binary ([`bin/runner`](bin/runner)) resolves paths relative to the Runner install, so `runner expand-env …`, `runner list`, and `runner lib-path` work from any cwd after it is on `PATH`.
+The **`runctl`** binary ([`bin/runctl`](bin/runctl)) resolves paths relative to the package root, so `runctl expand-env …`, `runctl list`, and `runctl lib-path` work from any cwd after it is on `PATH`.
+
+### `package.json` scripts only (no `run.sh`)
+
+After `pnpm add -D @your-org/runctl`, npm/pnpm put `node_modules/.bin` on `PATH` when you run **`pnpm run`**, so you can wire everything as scripts.
+
+**Important:** `runctl start-dev` runs **`pnpm run <script>`** (default script name **`dev`**). If you set `"dev": "runctl start-dev"`, that **recurses**. Use either:
+
+1. **Split scripts** — real server on another name, `dev` points at Runctl (set **`RUNCTL_PM_RUN_SCRIPT`**):
+
+```json
+{
+  "scripts": {
+    "dev:server": "next dev",
+    "dev": "RUNCTL_PM_RUN_SCRIPT=dev:server runctl start-dev",
+    "dev:stop": "runctl stop-dev",
+    "dev:status": "runctl status-dev",
+    "ports:list": "runctl list",
+    "ports:gc": "runctl gc",
+    "env:expand": "runctl expand-env env.manifest --out .env.local"
+  }
+}
+```
+
+2. **Keep `dev` as the framework** — add a separate script for the managed background dev:
+
+```json
+"dev": "next dev",
+"dev:bg": "runctl start-dev"
+```
+
+Full fragment: [`examples/consumer-package.json`](examples/consumer-package.json). Monorepo app dir (first arg to `start-dev`):  
+`"dev:web": "RUNCTL_PM_RUN_SCRIPT=dev:server runctl start-dev ./apps/web"`.
+
+Legacy env **`RUN_RUNNER_PM_RUN_SCRIPT`** is still read if **`RUNCTL_PM_RUN_SCRIPT`** is unset.
+
+That is “scripts in `package.json`” + **one devDependency**: the package ships **`runctl`** (and `lib/` / `scripts/`); you do not vendor our bash into your repo.
 
 ### How other developers get it (npm vs no install)
 
-**npm / pnpm (per project)** — publish this repo under a **scoped** name you control (the unscoped name `runner` is likely taken on the public registry), then teammates run:
+**npm / pnpm (per project)** — publish under **`@your-org/runctl`** (recommended) or try unscoped **`runctl`** if available:
 
 ```bash
-pnpm add -D @your-org/runner
-# or, before publishing:
-pnpm add -D runner@github:your-org/Runner#main
+pnpm add -D @your-org/runctl
+# or from git, before publishing:
+pnpm add -D runctl@github:your-org/Runner#main
 ```
 
-They get `node_modules/@your-org/runner/` with `lib/`, `bin/`, `scripts/`. Point `run.sh` at:
+They get `node_modules/@your-org/runctl/` with `lib/`, `bin/`, `scripts/`. Point `run.sh` at:
 
-`source "$PWD/node_modules/@your-org/runner/lib/run-lib.sh"`
+`source "$PWD/node_modules/@your-org/runctl/lib/run-lib.sh"`
 
-or put `node_modules/.bin` on `PATH` and use `pnpm exec runner lib-path`. To publish yourself: set `"private": false`, pick `"name": "@your-org/runner"`, `npm publish` / `pnpm publish`.
+or use `pnpm exec runctl lib-path`. To publish: set `"private": false`, `"name": "@your-org/runctl"`, then `npm publish` / `pnpm publish`.
 
-**npm global** — `npm install -g .` or `pnpm link --global` from a clone gives the `runner` command everywhere; no per-app `node_modules` entry.
+**npm global** — `npm install -g .` or `pnpm link --global` from a clone puts **`runctl`** on `PATH`.
 
-**No package manager (bash-only)** — the **core** workflow (PIDs, `~/.run`, `run_start_package_dev`) only needs **`lib/run-lib.sh`**: copy that single file into a repo (e.g. `scripts/vendor/run-lib.sh`) or `curl` it from raw git, and `source` it. You **skip** `runner expand-env` unless you also vendor [`scripts/expand-env-manifest.mjs`](scripts/expand-env-manifest.mjs) (needs Node, no extra npm deps) or use another dotenv tool.
+**No package manager (bash-only)** — the **core** workflow only needs **`lib/run-lib.sh`**: copy or `curl` that file and `source` it. You **skip** `runctl expand-env` unless you also vendor [`scripts/expand-env-manifest.mjs`](scripts/expand-env-manifest.mjs) (Node, no npm deps).
 
-So: **npm install is optional**; it is mainly a convenient way to ship **`bin/runner` + lib + script** together and version them. A lone bash file is enough if you accept manual updates and optional features.
+So: **npm install is optional**; it ships **`bin/runctl` + lib + script** together. A lone bash file is enough if you accept manual updates.
 
 ## Layout
 
@@ -58,13 +97,13 @@ Override the user directory with `RUN_GLOBAL_STATE` if needed.
 chmod +x run.sh   # once
 ./run.sh list      # all registered ports
 ./run.sh gc        # remove stale ~/.run/ports/* entries
-./run.sh status    # Runner’s own .run state
+./run.sh status    # this repo’s .run state
 ./run.sh lib-path  # path to lib/run-lib.sh
 ```
 
 ## Drop-in `run.sh` for any sibling project (`../*`)
 
-Copy **[`examples/run.sh.example`](examples/run.sh.example)** to your app root as `run.sh` and `chmod +x run.sh`. It picks up **`runner` on `PATH`**, then **`RUNNER_HOME`**, then a default path—override with **`RUN_LIB`** if you need to.
+Copy **[`examples/run.sh.example`](examples/run.sh.example)** to your app root as `run.sh` and `chmod +x run.sh`. It picks up **`runctl` on `PATH`**, then **`RUNCTL_HOME`**, then a default path—override with **`RUN_LIB`** if you need to.
 
 - **`./run.sh dev`** — picks a free port (see table below), runs `<pm> run dev` in the background, writes `.run/ports.env`, registers `~/.run/ports/<port>`.
 - **`./run.sh stop`** — stops PID files for this repo and clears those registry entries.
@@ -151,6 +190,7 @@ Vercel stores flat keys (no `${ALIAS}` in the UI). For **one value, many names**
 
 ```bash
 ./run.sh expand-env env.manifest --out .env.local
+runctl expand-env env.manifest --out .env.local
 ./run.sh expand-env env.manifest --check
 ```
 

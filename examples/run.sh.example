@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Copy to your app root as run.sh, chmod +x.
-# Install Runner once (see Runner README): pnpm link --global in Runner, or export RUNNER_HOME.
+# Install Runctl once: pnpm add -D runctl, or pnpm link --global from this repo, or export RUNCTL_HOME.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -z "${RUN_LIB:-}" ]]; then
-  if command -v runner >/dev/null 2>&1; then
-    RUN_LIB="$(runner lib-path)"
+  if command -v runctl >/dev/null 2>&1; then
+    RUN_LIB="$(runctl lib-path)"
   else
-    _rh="${RUNNER_HOME:-$HOME/Documents/Projects/Runner}"
+    _rh="${RUNCTL_HOME:-${RUNNER_HOME:-$HOME/Documents/Projects/Runner}}"
     RUN_LIB="$_rh/lib/run-lib.sh"
   fi
 fi
 [[ -f "$RUN_LIB" ]] || {
-  echo "run.sh: RUN_LIB not found: $RUN_LIB (set RUNNER_HOME, PATH to runner, or RUN_LIB)" >&2
+  echo "run.sh: RUN_LIB not found: $RUN_LIB (set RUNCTL_HOME, PATH to runctl, or RUN_LIB)" >&2
   exit 1
 }
 # shellcheck source=/dev/null

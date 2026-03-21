@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "dev:server": "next dev",
+    "dev": "RUNCTL_PM_RUN_SCRIPT=dev:server runctl start-dev",
+    "dev:stop": "runctl stop-dev",
+    "dev:status": "runctl status-dev",
+    "ports:list": "runctl list",
+    "ports:gc": "runctl gc",
+    "env:expand": "runctl expand-env env.manifest --out .env.local"
+  }
+}

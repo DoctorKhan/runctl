@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Runctl — put this on PATH (pnpm/npm link or devDependency .bin).
+RUNCTL_PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+
+usage() {
+  cat <<EOF
+Runctl (package root: $RUNCTL_PKG_ROOT)
+
+  runctl lib-path              Print path to run-lib.sh (for: source PATH_FROM_LIB_PATH)
+  runctl expand-env ...        Env manifest → .env.local (same args as the .mjs script)
+  runctl list | gc             User-wide ~/.run port registry
+  runctl start-dev [dir] …     From app root (or optional dir): run_start_package_dev …
+  runctl stop-dev [dir]        Stop daemons + port claims for cwd or dir
+  runctl status-dev [dir]      Show .run state for cwd or dir
+  runctl run ...               This repo’s run.sh (list, gc, status, …)
+  runctl version               Show install root
+
+As a devDependency: add scripts, e.g. \"dev\": \"runctl start-dev\"
+(no run.sh required). Optional dir: runctl start-dev ./apps/web web auto
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "$cmd" in
+    lib-path)
+      printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      ;;
+    expand-env)
+      exec node "$RUNCTL_PKG_ROOT/scripts/expand-env-manifest.mjs" "$@"
+      ;;
+    list | gc)
+      # shellcheck source=../lib/run-lib.sh
+      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      case "$cmd" in
+        list) run_global_list_ports ;;
+        gc) run_global_gc ;;
+      esac
+      ;;
+    start-dev)
+      local proj
+      if [[ $# -ge 1 && -d "$1" ]]; then
+        proj="$(cd "$1" && pwd)"
+        shift
+      else
+        proj="$(pwd)"
+      fi
+      # shellcheck source=../lib/run-lib.sh
+      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      run_project_init "$proj"
+      run_with_lock run_start_package_dev "$@"
+      ;;
+    stop-dev)
+      local proj
+      if [[ $# -ge 1 && -d "$1" ]]; then
+        proj="$(cd "$1" && pwd)"
+        shift
+      else
+        proj="$(pwd)"
+      fi
+      # shellcheck source=../lib/run-lib.sh
+      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      run_project_init "$proj"
+      run_stop_all
+      ;;
+    status-dev)
+      local proj
+      if [[ $# -ge 1 && -d "$1" ]]; then
+        proj="$(cd "$1" && pwd)"
+        shift
+      else
+        proj="$(pwd)"
+      fi
+      # shellcheck source=../lib/run-lib.sh
+      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      run_project_init "$proj"
+      run_local_status
+      ;;
+    run)
+      exec bash "$RUNCTL_PKG_ROOT/run.sh" "$@"
+      ;;
+    help | -h | --help)
+      usage
+      ;;
+    version | -v)
+      printf '%s\n' "runctl @ $RUNCTL_PKG_ROOT"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

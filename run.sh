@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runner toolkit — global ~/.run helpers and lib path.
+# Runctl — global ~/.run helpers and lib path (see package runctl / bin/runctl).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/run-lib.sh
 source "$ROOT/lib/run-lib.sh"

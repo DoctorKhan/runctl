@@ -1,15 +1,15 @@
 {
-  "name": "runner",
+  "name": "runctl",
   "version": "0.1.0",
-  "description": "Lightweight .run/ + ~/.run port/PID helpers, optional JS dev wiring, env manifest expander",
+  "description": "Runctl — .run/ + ~/.run port/PID helpers, optional JS dev wiring, env manifest expander",
   "private": true,
   "license": "MIT",
-  "keywords": ["dev", "ports", "pid", "vercel", "dotenv"],
+  "keywords": ["runctl", "dev", "ports", "pid", "vercel", "dotenv"],
   "engines": {
     "node": ">=18"
   },
   "bin": {
-    "runner": "bin/runner"
+    "runctl": "bin/runctl"
   },
   "files": [
     "bin",
