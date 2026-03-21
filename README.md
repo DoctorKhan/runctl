@@ -25,16 +25,20 @@ pnpm add -g runctl
 npm install -g runctl
 ```
 
-**One-liner with curl** (still uses npm/pnpm under the hood — you need Node installed):
+**One-liner with curl** (uses npm/pnpm to install from this repo on GitHub — you need Node installed):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USER/Runner/main/scripts/install-global.sh | bash
+curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
 ```
 
-For a **scoped** package:  
-`RUNCTL_PACKAGE=@your-org/runctl curl -fsSL …/install-global.sh | bash`
+After you **[publish to npm](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages)**, install from the registry instead:
 
-*(Replace `YOUR_GITHUB_USER/Runner` with your real repo path after you push. The script runs `pnpm/npm add -g`, so the package must be on the registry — or install from Git yourself, e.g. `pnpm add -g runctl@github:your-org/Runner#main`.)*
+```bash
+RUNCTL_PACKAGE=runctl curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
+```
+
+For a **scoped** registry package:  
+`RUNCTL_PACKAGE=@your-org/runctl curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash`
 
 ---
 

@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Runctl — .run/ + ~/.run port/PID helpers, JS dev wiring (Node ≥18), env manifest expander",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DoctorKhan/devport-kit.git"
+  },
   "license": "MIT",
   "keywords": ["runctl", "dev", "ports", "pid", "vercel", "dotenv"],
   "engines": {
