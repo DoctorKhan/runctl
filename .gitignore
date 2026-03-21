@@ -1,0 +1,4 @@
+.run/
+.env.local
+.env.vercel.local
+env.manifest

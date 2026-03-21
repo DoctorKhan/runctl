@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Copy to your app root as run.sh, chmod +x.
+# Install Runner once (see Runner README): pnpm link --global in Runner, or export RUNNER_HOME.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${RUN_LIB:-}" ]]; then
+  if command -v runner >/dev/null 2>&1; then
+    RUN_LIB="$(runner lib-path)"
+  else
+    _rh="${RUNNER_HOME:-$HOME/Documents/Projects/Runner}"
+    RUN_LIB="$_rh/lib/run-lib.sh"
+  fi
+fi
+[[ -f "$RUN_LIB" ]] || {
+  echo "run.sh: RUN_LIB not found: $RUN_LIB (set RUNNER_HOME, PATH to runner, or RUN_LIB)" >&2
+  exit 1
+}
+# shellcheck source=/dev/null
+source "$RUN_LIB"
+run_project_init "$ROOT"
+
+usage() {
+  cat <<'EOF'
+Usage: ./run.sh <command>
+
+  dev [name] [auto|PORT] [-- extra args for npm run dev]
+  stop              Stop daemons + clear ~/.run port claims for this repo
+  status            Local .run state + ports.env
+  install           pnpm install (override as needed)
+
+Examples:
+  ./run.sh dev
+  ./run.sh dev web auto -- --turbo
+  ./run.sh dev web 5173
+EOF
+}
+
+cmd="${1:-dev}"
+shift || true
+
+case "$cmd" in
+  dev)
+    run_with_lock run_start_package_dev "$@"
+    ;;
+  stop)
+    run_stop_all
+    ;;
+  status)
+    run_local_status
+    ;;
+  install)
+    if command -v pnpm >/dev/null 2>&1; then
+      (cd "$ROOT" && pnpm install)
+    elif command -v npm >/dev/null 2>&1; then
+      (cd "$ROOT" && npm install)
+    else
+      echo "Install pnpm or npm" >&2
+      exit 1
+    fi
+    ;;
+  help | -h | --help)
+    usage
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
