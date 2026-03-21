@@ -87,6 +87,11 @@ function formatEnv(out) {
 }
 
 function main() {
+  const major = Number.parseInt(process.versions.node.split(".")[0], 10);
+  if (major < 18) {
+    console.error("runctl: Node.js >= 18 is required (expand-env).");
+    process.exit(2);
+  }
   const args = process.argv.slice(2);
   let outPath = null;
   let checkOnly = false;

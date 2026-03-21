@@ -1,7 +1,7 @@
 {
   "name": "runctl",
   "version": "0.1.0",
-  "description": "Runctl — .run/ + ~/.run port/PID helpers, optional JS dev wiring, env manifest expander",
+  "description": "Runctl — .run/ + ~/.run port/PID helpers, JS dev wiring (Node ≥18), env manifest expander",
   "private": true,
   "license": "MIT",
   "keywords": ["runctl", "dev", "ports", "pid", "vercel", "dotenv"],

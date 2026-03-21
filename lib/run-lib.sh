@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# run-lib.sh — project .run/ + user ~/.run registry (source this file from run.sh)
-# Requires bash. Tested on macOS and Linux.
+# run-lib.sh — npm package `runctl`: project .run/ + user ~/.run registry.
+# Requires bash. Port/dev automation requires Node.js >= 18 (see package.json engines).
 # Intentionally no global `set -e` — this file is usually sourced.
 
 if [[ -z "${BASH_VERSION:-}" ]]; then
@@ -100,6 +100,17 @@ run_find_free_port() {
 
 # --- JS / Node dev servers (Vite, Next, Nuxt, Astro, etc.) -----------------
 
+run_require_node() {
+  command -v node >/dev/null 2>&1 || {
+    echo "runctl: Node.js is required (install Node >= 18; see runctl package engines)." >&2
+    return 1
+  }
+  node -e 'process.exit(parseInt(process.versions.node,10)>=18?0:1)' 2>/dev/null || {
+    echo "runctl: Node.js >= 18 is required (got $(node -v 2>/dev/null || echo none))." >&2
+    return 1
+  }
+}
+
 run_detect_package_manager() {
   local dir="${1:-$RUN_PROJECT_ROOT}"
   [[ -d "$dir" ]] || {
@@ -129,10 +140,7 @@ run_js_framework_kind() {
     printf '%s\n' generic
     return 0
   }
-  command -v node >/dev/null 2>&1 || {
-    printf '%s\n' generic
-    return 0
-  }
+  run_require_node || return 1
   node -e "
     const fs = require('fs');
     const f = process.argv[1];
@@ -147,11 +155,13 @@ run_js_framework_kind() {
       console.log('vite');
     else if (h('@remix-run/dev')) console.log('remix');
     else console.log('generic');
-  " "$pkg" 2>/dev/null || printf '%s\n' generic
+  " "$pkg"
 }
 
 run_infer_dev_base_port() {
-  case "$(run_js_framework_kind)" in
+  local k
+  k="$(run_js_framework_kind)" || return 1
+  case "$k" in
     vite) printf '%s\n' 5173 ;;
     astro) printf '%s\n' 4321 ;;
     next | nuxt | remix | generic) printf '%s\n' 3000 ;;
@@ -179,9 +189,9 @@ EOF
 
 # Start \`pnpm|yarn|npm run <script>\` in the background with a free port and register it.
 # Script name defaults to \`dev\`; set RUNCTL_PM_RUN_SCRIPT (e.g. dev:server) when \`dev\` is the runctl wrapper.
-# Legacy: RUN_RUNNER_PM_RUN_SCRIPT is still honored if RUNCTL_PM_RUN_SCRIPT is unset.
 # Usage: run_start_package_dev [service_name=web] [base_port|auto=auto] [extra args after script --]
 run_start_package_dev() {
+  run_require_node || return 1
   [[ -f "$RUN_PROJECT_ROOT/package.json" ]] || {
     echo "run_start_package_dev: no package.json in $RUN_PROJECT_ROOT" >&2
     return 1
@@ -218,7 +228,7 @@ run_start_package_dev() {
   run_write_ports_env "$port" "$svc"
 
   local host="${HOST:-127.0.0.1}"
-  local pm_script="${RUNCTL_PM_RUN_SCRIPT:-${RUN_RUNNER_PM_RUN_SCRIPT:-dev}}"
+  local pm_script="${RUNCTL_PM_RUN_SCRIPT:-dev}"
   echo "run-lib: [$kind] starting pm run $pm_script on PORT=$port (service=$svc, pm=$pm)"
   local pid
   pid="$(

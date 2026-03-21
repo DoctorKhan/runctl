@@ -28,6 +28,10 @@ main() {
       printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
       ;;
     expand-env)
+      command -v node >/dev/null 2>&1 || {
+        echo "runctl: Node.js >= 18 is required for expand-env." >&2
+        exit 1
+      }
       exec node "$RUNCTL_PKG_ROOT/scripts/expand-env-manifest.mjs" "$@"
       ;;
     list | gc)
