@@ -164,12 +164,12 @@ cmd_env() {
 }
 
 cmd_update() {
-  local pkg="runctl"
-  echo "Updating $pkg..."
+  local pkg="github:DoctorKhan/devport-kit"
+  echo "Updating runctl..."
   if command -v pnpm >/dev/null 2>&1; then
-    pnpm add -g "$pkg@latest"
+    pnpm add -g "$pkg"
   elif command -v npm >/dev/null 2>&1; then
-    npm install -g "$pkg@latest"
+    npm install -g "$pkg"
   else
     echo "runctl: pnpm or npm required to update." >&2
     exit 1
