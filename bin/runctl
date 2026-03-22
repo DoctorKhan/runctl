@@ -12,7 +12,7 @@ Runctl (package root: $RUNCTL_PKG_ROOT)
   runctl start-dev [dir] …     From app root (or optional dir): run_start_package_dev …
   runctl stop-dev [dir]        Stop daemons + port claims for cwd or dir
   runctl status-dev [dir]      Show .run state for cwd or dir
-  runctl run ...               This repo’s run.sh (list, gc, status, …)
+  runctl run ...               Dev-only: this package’s run.sh (not your app’s)
   runctl version               Show install root
 
 As a devDependency: add scripts, e.g. \"dev\": \"runctl start-dev\"

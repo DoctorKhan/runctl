@@ -111,6 +111,20 @@ run_require_node() {
   }
 }
 
+# True if package.json defines scripts.<name> (Node required).
+run_package_has_script() {
+  local name="$1"
+  [[ -f "$RUN_PROJECT_ROOT/package.json" ]] || return 1
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const root = process.argv[1];
+    const s = process.argv[2];
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    process.exit(pkg.scripts && Object.prototype.hasOwnProperty.call(pkg.scripts, s) ? 0 : 1);
+  ' "$RUN_PROJECT_ROOT" "$name" 2>/dev/null
+}
+
 run_detect_package_manager() {
   local dir="${1:-$RUN_PROJECT_ROOT}"
   [[ -d "$dir" ]] || {
@@ -119,6 +133,10 @@ run_detect_package_manager() {
   }
   if [[ -f "$dir/pnpm-lock.yaml" ]] && command -v pnpm >/dev/null 2>&1; then
     printf '%s\n' pnpm
+    return 0
+  fi
+  if [[ -f "$dir/bun.lock" || -f "$dir/bun.lockb" ]] && command -v bun >/dev/null 2>&1; then
+    printf '%s\n' bun
     return 0
   fi
   if [[ -f "$dir/yarn.lock" ]] && command -v yarn >/dev/null 2>&1; then
@@ -229,6 +247,17 @@ run_start_package_dev() {
 
   local host="${HOST:-127.0.0.1}"
   local pm_script="${RUNCTL_PM_RUN_SCRIPT:-dev}"
+  # Many repos pair "predev" with script "dev". Using dev:server skips predev because only
+  # predev:server would run automatically. If predev exists but pre<pm_script> does not, run predev once.
+  if [[ "${RUNCTL_SKIP_PREDEV:-}" != "1" && "$pm_script" != "dev" ]]; then
+    if [[ "$pm_script" == dev:* || "$pm_script" == dev_* ]]; then
+      local pre_for_script="pre${pm_script}"
+      if ! run_package_has_script "$pre_for_script" && run_package_has_script "predev"; then
+        echo "run-lib: running predev before $pm_script ($pre_for_script not defined)"
+        (cd "$RUN_PROJECT_ROOT" && "$pm" run predev) || return 1
+      fi
+    fi
+  fi
   echo "run-lib: [$kind] starting pm run $pm_script on PORT=$port (service=$svc, pm=$pm)"
   local pid
   pid="$(
@@ -253,9 +282,15 @@ run_daemon_start() {
   mkdir -p "$RUN_LOCAL_STATE/pids" "$RUN_LOCAL_STATE/logs"
   local pidf="$RUN_LOCAL_STATE/pids/${name}.pid"
   local logf="$RUN_LOCAL_STATE/logs/${name}.log"
-  if [[ -f "$pidf" ]] && run_pid_alive "$(cat "$pidf")"; then
-    echo "run_daemon_start: ${name} already running (pid $(cat "$pidf"))" >&2
-    return 1
+  if [[ -f "$pidf" ]]; then
+    local oldpid
+    oldpid="$(cat "$pidf")"
+    if run_pid_alive "$oldpid"; then
+      echo "run_daemon_start: ${name} already running (pid $oldpid)" >&2
+      return 1
+    fi
+    rm -f "$pidf"
+    echo "run_daemon_start: cleared stale pid for ${name} (was $oldpid)" >&2
   fi
   nohup "$@" >>"$logf" 2>&1 &
   local pid=$!
