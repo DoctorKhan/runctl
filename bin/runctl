@@ -2,21 +2,38 @@
 # Runctl — put this on PATH (pnpm/npm link or devDependency .bin).
 RUNCTL_PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 
+_b="" _d="" _r="" _c="" _y=""
+if [[ -t 1 ]]; then
+  _b=$'\033[1m' _d=$'\033[2m' _r=$'\033[0m'
+  _c=$'\033[36m' _y=$'\033[33m'
+fi
+
 usage() {
   cat <<EOF
-Runctl (package root: $RUNCTL_PKG_ROOT)
+${_b}runctl${_r} — dev-server orchestrator & port manager
 
-  runctl lib-path              Print path to run-lib.sh (for: source PATH_FROM_LIB_PATH)
-  runctl expand-env ...        Env manifest → .env.local (same args as the .mjs script)
-  runctl list | gc             User-wide ~/.run port registry
-  runctl start-dev [dir] …     From app root (or optional dir): run_start_package_dev …
-  runctl stop-dev [dir]        Stop daemons + port claims for cwd or dir
-  runctl status-dev [dir]      Show .run state for cwd or dir
-  runctl run ...               Dev-only: this package’s run.sh (not your app’s)
-  runctl version               Show install root
+${_y}Usage:${_r}  runctl <command> [options]
 
-As a devDependency: add scripts, e.g. \"dev\": \"runctl start-dev\"
-(no run.sh required). Optional dir: runctl start-dev ./apps/web web auto
+${_y}Dev server${_r}
+  ${_c}start-dev${_r} [dir] [args]    Start dev server (cwd or dir)
+  ${_c}stop-dev${_r}  [dir]           Stop daemons & release ports
+  ${_c}status-dev${_r} [dir]          Show running state
+
+${_y}Ports${_r}
+  ${_c}list${_r}                      Show user-wide ~/.run port registry
+  ${_c}gc${_r}                        Clean up stale port claims
+
+${_y}Environment${_r}
+  ${_c}expand-env${_r} [args]         Generate .env.local from manifest
+
+${_y}Plumbing${_r}
+  ${_c}lib-path${_r}                  Print path to run-lib.sh ${_d}(source \$(runctl lib-path))${_r}
+  ${_c}run${_r} [args]                Execute this package's run.sh
+  ${_c}version${_r}                   Print install location
+
+${_d}As a devDependency, add to package.json scripts:
+  "dev": "runctl start-dev"
+  "dev:web": "runctl start-dev ./apps/web web auto"${_r}
 EOF
 }
 
