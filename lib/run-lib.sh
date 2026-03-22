@@ -43,6 +43,19 @@ run_project_init() {
   mkdir -p "$RUN_LOCAL_STATE/pids" "$RUN_LOCAL_STATE/logs" \
     "$RUN_GLOBAL_STATE/ports" "$RUN_GLOBAL_STATE/projects"
   [[ -f "$RUN_LOCAL_STATE/claimed-ports" ]] || : >"$RUN_LOCAL_STATE/claimed-ports"
+  _run_ensure_gitignore
+}
+
+_run_ensure_gitignore() {
+  local gi="$RUN_PROJECT_ROOT/.gitignore"
+  [[ -d "$RUN_PROJECT_ROOT/.git" ]] || return 0
+  if [[ ! -f "$gi" ]]; then
+    printf '# Runtime state (runctl)\n.run/\n' >"$gi"
+    return 0
+  fi
+  if ! grep -qxF '.run/' "$gi" && ! grep -qxF '.run' "$gi"; then
+    printf '\n# Runtime state (runctl)\n.run/\n' >>"$gi"
+  fi
 }
 
 run_lock_acquire() {
