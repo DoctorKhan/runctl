@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Runctl — put this on PATH (pnpm/npm link or devDependency .bin).
+# Runctl CLI — installed via pnpm/npm (devDependency .bin or global).
+set -euo pipefail
 RUNCTL_PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 
-_b="" _d="" _r="" _c="" _y=""
+_b="" _d="" _r="" _c="" _y="" _g=""
 if [[ -t 1 ]]; then
   _b=$'\033[1m' _d=$'\033[2m' _r=$'\033[0m'
-  _c=$'\033[36m' _y=$'\033[33m'
+  _c=$'\033[36m' _y=$'\033[33m' _g=$'\033[32m'
 fi
 
 usage() {
@@ -14,100 +15,157 @@ ${_b}runctl${_r} — dev-server orchestrator & port manager
 
 ${_y}Usage:${_r}  runctl <command> [options]
 
-${_y}Dev server${_r}
-  ${_c}start-dev${_r} [dir] [args]    Start dev server (cwd or dir)
-  ${_c}stop-dev${_r}  [dir]           Stop daemons & release ports
-  ${_c}status-dev${_r} [dir]          Show running state
+${_y}Commands${_r}
+  ${_c}start${_r} [dir] [--script name]   Start dev server ${_d}(picks free port, backgrounds)${_r}
+  ${_c}stop${_r}  [dir]                   Stop daemons & release ports
+  ${_c}status${_r} [dir]                  Show running state
+  ${_c}ports${_r}                         List user-wide port registry (~/.run)
+  ${_c}ports gc${_r}                      Clean up stale port claims
+  ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
+  ${_c}update${_r}                        Update runctl to latest version
 
-${_y}Ports${_r}
-  ${_c}list${_r}                      Show user-wide ~/.run port registry
-  ${_c}gc${_r}                        Clean up stale port claims
+${_y}Options${_r}
+  ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
+  ${_c}--help${_r}, ${_c}-h${_r}                     Show this help
 
-${_y}Environment${_r}
-  ${_c}expand-env${_r} [args]         Generate .env.local from manifest
-
-${_y}Plumbing${_r}
-  ${_c}lib-path${_r}                  Print path to run-lib.sh ${_d}(source \$(runctl lib-path))${_r}
-  ${_c}run${_r} [args]                Execute this package's run.sh
-  ${_c}version${_r}                   Print install location
-
-${_d}As a devDependency, add to package.json scripts:
-  "dev": "runctl start-dev"
-  "dev:web": "runctl start-dev ./apps/web web auto"${_r}
+${_d}Quick start — add to package.json:
+  "dev": "runctl start --script dev:server",
+  "dev:server": "next dev",
+  "dev:stop": "runctl stop"${_r}
 EOF
+}
+
+_resolve_proj() {
+  if [[ $# -ge 1 && -d "$1" ]]; then
+    (cd "$1" && pwd)
+  else
+    pwd
+  fi
+}
+
+cmd_start() {
+  local proj script="" args=()
+  proj="$(pwd)"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --script) script="${2:-}"; shift 2 ;;
+      --) shift; args+=("$@"); break ;;
+      -h | --help) usage; exit 0 ;;
+      -*)
+        echo "runctl start: unknown flag: $1" >&2
+        exit 1
+        ;;
+      *)
+        if [[ -d "$1" ]]; then
+          proj="$(cd "$1" && pwd)"
+          shift
+        else
+          args+=("$1")
+          shift
+        fi
+        ;;
+    esac
+  done
+
+  [[ -n "$script" ]] && export RUNCTL_PM_RUN_SCRIPT="$script"
+
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
+  run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}"
+}
+
+cmd_stop() {
+  local proj
+  proj="$(_resolve_proj "$@")"
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
+  run_stop_all
+}
+
+cmd_status() {
+  local proj
+  proj="$(_resolve_proj "$@")"
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
+  run_local_status
+}
+
+cmd_ports() {
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  local sub="${1:-list}"
+  case "$sub" in
+    list | "") run_global_list_ports ;;
+    gc) run_global_gc ;;
+    *)
+      echo "runctl ports: unknown subcommand: $sub (try: ports, ports gc)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_env() {
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    expand)
+      command -v node >/dev/null 2>&1 || {
+        echo "runctl: Node.js >= 18 is required for env expand." >&2
+        exit 1
+      }
+      exec node "$RUNCTL_PKG_ROOT/scripts/expand-env-manifest.mjs" "$@"
+      ;;
+    *)
+      echo "runctl env: unknown subcommand: ${sub:-<none>} (try: env expand)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_update() {
+  local pkg="runctl"
+  echo "Updating $pkg..."
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm add -g "$pkg@latest"
+  elif command -v npm >/dev/null 2>&1; then
+    npm install -g "$pkg@latest"
+  else
+    echo "runctl: pnpm or npm required to update." >&2
+    exit 1
+  fi
 }
 
 main() {
   local cmd="${1:-help}"
   shift || true
   case "$cmd" in
-    lib-path)
-      printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-      ;;
-    expand-env)
-      command -v node >/dev/null 2>&1 || {
-        echo "runctl: Node.js >= 18 is required for expand-env." >&2
-        exit 1
-      }
-      exec node "$RUNCTL_PKG_ROOT/scripts/expand-env-manifest.mjs" "$@"
-      ;;
-    list | gc)
-      # shellcheck source=../lib/run-lib.sh
-      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-      case "$cmd" in
-        list) run_global_list_ports ;;
-        gc) run_global_gc ;;
-      esac
-      ;;
-    start-dev)
-      local proj
-      if [[ $# -ge 1 && -d "$1" ]]; then
-        proj="$(cd "$1" && pwd)"
-        shift
-      else
-        proj="$(pwd)"
-      fi
-      # shellcheck source=../lib/run-lib.sh
-      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-      run_project_init "$proj"
-      run_with_lock run_start_package_dev "$@"
-      ;;
-    stop-dev)
-      local proj
-      if [[ $# -ge 1 && -d "$1" ]]; then
-        proj="$(cd "$1" && pwd)"
-        shift
-      else
-        proj="$(pwd)"
-      fi
-      # shellcheck source=../lib/run-lib.sh
-      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-      run_project_init "$proj"
-      run_stop_all
-      ;;
-    status-dev)
-      local proj
-      if [[ $# -ge 1 && -d "$1" ]]; then
-        proj="$(cd "$1" && pwd)"
-        shift
-      else
-        proj="$(pwd)"
-      fi
-      # shellcheck source=../lib/run-lib.sh
-      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-      run_project_init "$proj"
-      run_local_status
-      ;;
-    run)
-      exec bash "$RUNCTL_PKG_ROOT/run.sh" "$@"
-      ;;
-    help | -h | --help)
-      usage
-      ;;
-    version | -v)
-      printf '%s\n' "runctl @ $RUNCTL_PKG_ROOT"
-      ;;
+    start)    cmd_start "$@" ;;
+    stop)     cmd_stop "$@" ;;
+    status)   cmd_status "$@" ;;
+    ports)    cmd_ports "$@" ;;
+    env)      cmd_env "$@" ;;
+    update)   cmd_update ;;
+
+    # Plumbing
+    lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;
+    version | -v) printf '%s\n' "runctl @ $RUNCTL_PKG_ROOT" ;;
+    help | -h | --help) usage ;;
+
+    # Hidden backward-compat aliases
+    start-dev) cmd_start "$@" ;;
+    stop-dev)  cmd_stop "$@" ;;
+    status-dev) cmd_status "$@" ;;
+    list)      cmd_ports list ;;
+    gc)        cmd_ports gc ;;
+    expand-env) cmd_env expand "$@" ;;
+
     *)
+      echo "runctl: unknown command: $cmd" >&2
+      echo ""
       usage
       exit 1
       ;;

@@ -2,7 +2,6 @@
   "name": "runctl",
   "version": "0.1.0",
   "description": "Runctl — .run/ + ~/.run port/PID helpers, JS dev wiring (Node ≥18), env manifest expander",
-  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/DoctorKhan/devport-kit.git"
@@ -18,7 +17,6 @@
   "files": [
     "bin",
     "lib",
-    "run.sh",
     "scripts",
     "examples",
     "docs",
@@ -26,7 +24,7 @@
   ],
   "scripts": {
     "run": "bash ./run.sh",
-    "expand-env": "node ./scripts/expand-env-manifest.mjs",
+    "env:expand": "node ./scripts/expand-env-manifest.mjs",
     "link-global": "pnpm link --global"
   }
 }

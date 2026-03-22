@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runctl — global ~/.run helpers and lib path (see package runctl / bin/runctl).
+# Internal dev script for the runctl package itself.
+# Not shipped to consumers (excluded from "files" in package.json).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/run-lib.sh
 source "$ROOT/lib/run-lib.sh"
@@ -8,18 +9,12 @@ usage() {
   cat <<'EOF'
 Usage: ./run.sh <command>
 
-  list        Registered ports (~/.run/ports)
-  gc          Drop stale registry entries (dead PID / nothing listening)
-  status      This repo’s .run state (pids + claimed ports)
-  lib-path    Print path to lib/run-lib.sh (source from other run.sh)
-  expand-env  Run env manifest expander (pass args after expand-env)
+  ports          Registered ports (~/.run/ports)
+  ports-gc       Drop stale registry entries
+  status         This repo's .run state
+  lib-path       Print path to lib/run-lib.sh
+  env-expand     Run env manifest expander (pass args after env-expand)
   help
-
-Other projects:
-
-  export RUN_LIB="$(./run.sh lib-path)"   # or set a fixed path in each repo
-  source "$RUN_LIB"
-  run_project_init "$(pwd)"
 EOF
 }
 
@@ -27,10 +22,10 @@ main() {
   local cmd="${1:-help}"
   shift || true
   case "$cmd" in
-    list)
+    ports)
       run_global_list_ports
       ;;
-    gc)
+    ports-gc)
       run_global_gc
       ;;
     status)
@@ -40,7 +35,7 @@ main() {
     lib-path)
       printf '%s\n' "$ROOT/lib/run-lib.sh"
       ;;
-    expand-env)
+    env-expand)
       exec node "$ROOT/scripts/expand-env-manifest.mjs" "$@"
       ;;
     help | -h | --help)

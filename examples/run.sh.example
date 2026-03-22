@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Optional: only if you want a shell entrypoint instead of package.json scripts alone.
-# Prerequisite: pnpm add -D runctl   (Node >= 18 everywhere)
+# Optional shell entrypoint — most projects only need package.json scripts.
+# Prerequisite: pnpm add -D runctl   (Node >= 18)
 
 set -euo pipefail
 
@@ -32,8 +32,8 @@ usage() {
   cat <<'EOF'
 Usage: ./run.sh <command>
 
-  dev [name] [auto|PORT] [-- extra args for npm run dev]
-  stop              Stop daemons + clear ~/.run port claims for this repo
+  dev [name] [auto|PORT] [-- extra args]
+  stop              Stop daemons + release port claims
   status            Local .run state + ports.env
   install           pnpm install
 

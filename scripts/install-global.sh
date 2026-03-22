@@ -10,4 +10,4 @@ if command -v pnpm >/dev/null 2>&1; then
 else
   npm install -g "$PKG"
 fi
-printf 'Installed %s — try: runctl help\n' "$PKG"
+printf '\nInstalled %s — run: runctl help\n' "$PKG"

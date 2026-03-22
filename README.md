@@ -1,6 +1,6 @@
 # Runctl
 
-Picks a **free port**, runs your **dev server in the background**, and keeps **PID + port** state in **`.run/`** and **`~/.run`** so projects don’t collide.
+Picks a **free port**, runs your **dev server in the background**, and keeps **PID + port** state in **`.run/`** and **`~/.run`** so projects don't collide.
 
 **Needs Node.js 18+**, **bash**, and **`lsof`** (for free-port detection and `gc`; common on macOS, often `apt install lsof` on Linux).
 
@@ -10,86 +10,78 @@ Picks a **free port**, runs your **dev server in the background**, and keeps **P
 
 ## Install
 
-**In a project (most people):**
+**In a project (recommended):**
 
 ```bash
-pnpm add -D runctl
+pnpm add -D runctl          # or npm install -D / yarn add -D
 ```
-
-Same idea with npm or yarn: `npm install -D runctl`, `yarn add -D runctl`.  
-If the published name is scoped, use that instead (e.g. `@your-org/runctl`).
 
 **Global CLI** (`runctl` on your PATH everywhere):
 
 ```bash
-pnpm add -g runctl
-# or
-npm install -g runctl
+pnpm add -g runctl           # or npm install -g
 ```
 
-**One-liner with curl** (uses npm/pnpm to install from this repo on GitHub — you need Node installed):
+**One-liner (from GitHub, pre-publish):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
 ```
 
-After you **[publish to npm](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages)**, install from the registry instead:
-
-```bash
-RUNCTL_PACKAGE=runctl curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
-```
-
-For a **scoped** registry package:  
-`RUNCTL_PACKAGE=@your-org/runctl curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash`
-
 ---
 
 ## Quick start
 
-Add scripts (change `next dev` to match your app):
+Add scripts to your `package.json`:
 
 ```json
 {
   "scripts": {
+    "dev": "runctl start --script dev:server",
     "dev:server": "next dev",
-    "dev": "RUNCTL_PM_RUN_SCRIPT=dev:server runctl start-dev",
-    "dev:stop": "runctl stop-dev"
+    "dev:stop": "runctl stop"
   }
 }
 ```
 
-- **`pnpm run dev`** — start (port in `.run/ports.env`, logs in `.run/logs/`).
-- **`pnpm run dev:stop`** — stop and drop this repo’s port entries in `~/.run`.
+- **`pnpm dev`** — start (port in `.run/ports.env`, logs in `.run/logs/`).
+- **`pnpm dev:stop`** — stop and release ports.
 
-**Why two scripts?** `runctl start-dev` runs `pnpm run <name>`. If `dev` were only `runctl start-dev`, it would call itself in a loop. The real server lives on **`dev:server`**; **`RUNCTL_PM_RUN_SCRIPT`** tells runctl which script to run.
+**Why two scripts?** `runctl start` runs `pnpm run <name>` under the hood. If `dev` called itself, it would loop. The real server lives on `dev:server`; `--script` tells runctl which one to run. Without `--script`, it defaults to running `dev`.
 
-**`predev`:** Repos that define `predev` next to `dev` (e.g. a doctor step) still get it when you use `dev:server`: if you run a script named `dev:*` or `dev_*` and there is no `pre<that-script>` in `package.json`, runctl runs **`predev` once** before starting the server. Set **`RUNCTL_SKIP_PREDEV=1`** to turn that off.
+**`predev`:** If you define `predev` next to `dev` (e.g. a doctor step) and your script name is `dev:*` or `dev_*` without its own `pre<script>`, runctl runs `predev` once before starting. Set `RUNCTL_SKIP_PREDEV=1` to skip.
 
 ---
 
-## Fits / doesn’t fit (typical `~/Projects/*` layouts)
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `runctl start [dir] [--script name]` | Start dev server (picks free port, backgrounds) |
+| `runctl stop [dir]` | Stop daemons & release ports |
+| `runctl status [dir]` | Show `.run` state for this package |
+| `runctl ports` | List user-wide port registry (`~/.run`) |
+| `runctl ports gc` | Clean up stale port claims |
+| `runctl env expand <manifest> [--out file]` | Generate `.env.local` from manifest |
+| `runctl update` | Update to latest version |
+| `runctl version` | Print install location |
+
+**Monorepo:** `runctl start ./apps/web --script dev:server`
+
+**Vite:** if `--port` isn't forwarded, set `server.port` from `process.env.PORT` in `vite.config`.
+
+---
+
+## Fits / doesn't fit
 
 | Kind of repo | Runctl |
 |--------------|--------|
-| Next.js, Vite, SvelteKit (`vite dev`), Nuxt, Astro, Remix | **Good fit** — port flags are wired for common stacks. |
-| **pnpm** + `packageManager` field, **npm**, **yarn**, **bun** lockfiles | **Supported** for `run <script>`. |
+| Next.js, Vite, SvelteKit, Nuxt, Astro, Remix | **Good fit** — port flags wired for common stacks. |
+| **pnpm**, **npm**, **yarn**, **bun** lockfiles | **Supported** for `run <script>`. |
 | **`predev`** + split `dev` / `dev:server` | **Supported** — see above. |
-| Monorepo app in a subfolder | Use **`runctl start-dev ./apps/web`** (or your path). |
-| **No `package.json`** (Python, Flutter, Go-only, etc.) | **Not a fit** — this tool is for Node package scripts. |
-| **`dev` is a custom Node entry** (gateways, CLIs, not an HTTP dev server) | **Weak fit** — `PORT`/`HOST` are set, but no framework CLI flags; you’d wire the port inside your script. |
-
----
-
-## More commands
-
-| Command | What it does |
-|---------|----------------|
-| `runctl status-dev` | `.run` state for this package |
-| `runctl list` / `runctl gc` | List / clean `~/.run/ports` |
-| `runctl expand-env env.manifest --out .env.local` | Expand env aliases |
-
-**Monorepo:** `runctl start-dev ./apps/web`  
-**Vite:** if `--port` isn’t forwarded, set `server.port` from `process.env.PORT` in `vite.config`.
+| Monorepo app in a subfolder | Use `runctl start ./apps/web`. |
+| **No `package.json`** (Python, Go, etc.) | **Not a fit** — this tool is for Node package scripts. |
+| Custom Node entry (gateways, CLIs) | **Weak fit** — `PORT`/`HOST` are set, but no framework CLI flags. |
 
 ---
 
@@ -97,4 +89,4 @@ Add scripts (change `next dev` to match your app):
 
 [`examples/consumer-package.json`](examples/consumer-package.json) · [`docs/vercel-and-env.md`](docs/vercel-and-env.md) · [`examples/env.manifest.example`](examples/env.manifest.example)
 
-**Develop this repo:** `pnpm install` → `pnpm run run -- list`
+**Develop this repo:** `pnpm install` → `./run.sh list`
