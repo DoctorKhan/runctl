@@ -17,6 +17,7 @@ ${_y}Usage:${_r}  runctl <command> [options]
 
 ${_y}Commands${_r}
   ${_c}start${_r} [dir] [--script name]   Start dev server ${_d}(picks free port, backgrounds)${_r}
+  ${_c}open${_r}  [dir]                   Open running dev server in browser
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
   ${_c}ports${_r}                         List user-wide port registry (~/.run)
@@ -74,6 +75,42 @@ cmd_start() {
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
   run_project_init "$proj"
   run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}"
+}
+
+cmd_open() {
+  local proj
+  proj="$(_resolve_proj "$@")"
+  local ports_env="$proj/.run/ports.env"
+  if [[ ! -f "$ports_env" ]]; then
+    echo "runctl open: no running server found (.run/ports.env missing)" >&2
+    echo "Start one first: runctl start" >&2
+    exit 1
+  fi
+  local port="" host=""
+  while IFS= read -r line; do
+    case "$line" in
+      PORT=*) port="${line#PORT=}" ;;
+      HOST=*) host="${line#HOST=}" ;;
+    esac
+  done <"$ports_env"
+  if [[ -z "$port" ]]; then
+    echo "runctl open: PORT not found in $ports_env" >&2
+    exit 1
+  fi
+  [[ -z "$host" || "$host" == "0.0.0.0" || "$host" == "127.0.0.1" ]] && host="localhost"
+  local url="http://${host}:${port}"
+  echo "Opening $url"
+  if command -v open >/dev/null 2>&1; then
+    open "$url"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url"
+  elif command -v wslview >/dev/null 2>&1; then
+    wslview "$url"
+  else
+    echo "runctl open: no browser opener found (tried open, xdg-open, wslview)" >&2
+    echo "Visit: $url" >&2
+    exit 1
+  fi
 }
 
 cmd_stop() {
@@ -144,6 +181,7 @@ main() {
   shift || true
   case "$cmd" in
     start)    cmd_start "$@" ;;
+    open)     cmd_open "$@" ;;
     stop)     cmd_stop "$@" ;;
     status)   cmd_status "$@" ;;
     ports)    cmd_ports "$@" ;;
