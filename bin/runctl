@@ -99,7 +99,7 @@ cmd_open() {
   fi
   [[ -z "$host" || "$host" == "0.0.0.0" || "$host" == "127.0.0.1" ]] && host="localhost"
   local url="http://${host}:${port}"
-  echo "Opening $url"
+  echo "runctl open: opening ${url}"
   if command -v open >/dev/null 2>&1; then
     open "$url"
   elif command -v xdg-open >/dev/null 2>&1; then
@@ -120,6 +120,7 @@ cmd_stop() {
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
   run_project_init "$proj"
   run_stop_all
+  echo "runctl stop: stopped local services and released claimed ports for $proj"
 }
 
 cmd_status() {
@@ -164,12 +165,11 @@ cmd_env() {
 }
 
 cmd_update() {
-  local pkg="github:DoctorKhan/devport-kit"
-  echo "Updating runctl..."
+  echo "runctl update: installing latest runctl..."
   if command -v pnpm >/dev/null 2>&1; then
-    pnpm add -g "$pkg"
+    pnpm add -g runctl@latest
   elif command -v npm >/dev/null 2>&1; then
-    npm install -g "$pkg"
+    npm install -g runctl@latest
   else
     echo "runctl: pnpm or npm required to update." >&2
     exit 1

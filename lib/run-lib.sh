@@ -449,40 +449,66 @@ run_global_list_ports() {
     printf '%s\t%s\t%s\t%s\n' "${port}" "${pid:--}" "${svc:--}" "${proot:--}" >>"$tmp"
   done
   shopt -u nullglob
-  printf '%-6s %-8s %-6s %s\n' "PORT" "PID" "SVC" "PROJECT"
+  printf '%-6s %-8s %-10s %s\n' "PORT" "PID" "SERVICE" "PROJECT"
+  printf '%-6s %-8s %-10s %s\n' "------" "--------" "----------" "-------"
   if [[ -s "$tmp" ]]; then
     sort -n "$tmp" | while IFS=$'\t' read -r port pid svc proot; do
-      printf '%-6s %-8s %-6s %s\n' "$port" "$pid" "$svc" "$proot"
+      printf '%-6s %-8s %-10s %s\n' "$port" "$pid" "$svc" "$proot"
     done
+  else
+    printf '%s\n' "(no claimed ports)"
   fi
   rm -f "$tmp"
 }
 
 run_local_status() {
-  echo "Project: $RUN_PROJECT_ROOT"
-  echo "Slug:    $RUN_PROJECT_SLUG"
-  echo "Local:   $RUN_LOCAL_STATE"
-  echo ""
-  local f base pid
+  printf 'runctl status\n'
+  printf '  %-10s %s\n' "project:" "$RUN_PROJECT_ROOT"
+  printf '  %-10s %s\n' "slug:" "$RUN_PROJECT_SLUG"
+  printf '  %-10s %s\n' "state-dir:" "$RUN_LOCAL_STATE"
+  printf '\n'
+
+  local f base pid state
+  local has_services=0
+  printf 'services\n'
+  printf '  %-14s %-8s %-8s %s\n' "name" "pid" "state" "log"
+  printf '  %-14s %-8s %-8s %s\n' "--------------" "--------" "--------" "---"
   shopt -s nullglob
   for f in "$RUN_LOCAL_STATE/pids"/*.pid; do
+    has_services=1
     base="$(basename "$f" .pid)"
     pid="$(cat "$f")"
     if run_pid_alive "$pid"; then
-      echo "  $base  pid=$pid  (running)"
+      state="running"
     else
-      echo "  $base  pid=$pid  (stale)"
+      state="stale"
     fi
+    printf '  %-14s %-8s %-8s %s\n' "$base" "$pid" "$state" "$RUN_LOCAL_STATE/logs/${base}.log"
   done
   shopt -u nullglob
+  if [[ "$has_services" -eq 0 ]]; then
+    printf '  %s\n' "(none)"
+  fi
+
   if [[ -s "$RUN_LOCAL_STATE/claimed-ports" ]]; then
-    echo ""
-    echo "Claimed ports (registry):"
-    cat "$RUN_LOCAL_STATE/claimed-ports" | sed 's/^/  /'
+    printf '\n'
+    printf 'claimed ports\n'
+    sed 's/^/  - /' "$RUN_LOCAL_STATE/claimed-ports"
   fi
   if [[ -f "$RUN_LOCAL_STATE/ports.env" ]]; then
-    echo ""
-    echo "ports.env (last dev allocation):"
-    sed 's/^/  /' "$RUN_LOCAL_STATE/ports.env"
+    local env_port="" env_host="" env_service=""
+    while IFS= read -r line; do
+      case "$line" in
+        PORT=*) env_port="${line#PORT=}" ;;
+        HOST=*) env_host="${line#HOST=}" ;;
+        RUN_DEV_SERVICE=*) env_service="${line#RUN_DEV_SERVICE=}" ;;
+      esac
+    done <"$RUN_LOCAL_STATE/ports.env"
+    printf '\n'
+    printf 'last dev allocation\n'
+    [[ -n "$env_service" ]] && printf '  %-10s %s\n' "service:" "$env_service"
+    [[ -n "$env_port" ]] && printf '  %-10s %s\n' "port:" "$env_port"
+    [[ -n "$env_host" ]] && printf '  %-10s %s\n' "host:" "$env_host"
+    printf '  %-10s %s\n' "env-file:" "$RUN_LOCAL_STATE/ports.env"
   fi
 }

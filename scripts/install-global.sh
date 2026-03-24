@@ -4,7 +4,7 @@
 # Registry: RUNCTL_PACKAGE=runctl curl -fsSL … | bash
 # Scoped: RUNCTL_PACKAGE=@your-org/runctl curl -fsSL … | bash
 set -eu
-PKG="${RUNCTL_PACKAGE:-github:DoctorKhan/devport-kit}"
+PKG="${RUNCTL_PACKAGE:-runctl}"
 if command -v pnpm >/dev/null 2>&1; then
   pnpm add -g "$PKG"
 else

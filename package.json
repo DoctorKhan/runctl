@@ -1,13 +1,16 @@
 {
   "name": "runctl",
   "version": "0.1.0",
-  "description": "Runctl — .run/ + ~/.run port/PID helpers, JS dev wiring (Node ≥18), env manifest expander",
+  "description": "Picks a free port, runs your dev server in the background, and keeps PID + port state in .run/ so projects don't collide.",
+  "author": "DoctorKhan",
+  "homepage": "https://github.com/DoctorKhan/devport-kit#readme",
+  "bugs": "https://github.com/DoctorKhan/devport-kit/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/DoctorKhan/devport-kit.git"
   },
   "license": "MIT",
-  "keywords": ["runctl", "dev", "ports", "pid", "vercel", "dotenv"],
+  "keywords": ["runctl", "dev", "dev-server", "ports", "pid", "vercel", "dotenv", "vite", "next"],
   "engines": {
     "node": ">=18"
   },
@@ -25,6 +28,7 @@
   "scripts": {
     "run": "bash ./run.sh",
     "env:expand": "node ./scripts/expand-env-manifest.mjs",
-    "link-global": "pnpm link --global"
+    "link-global": "pnpm link --global",
+    "prepublishOnly": "node -e \"assert(process.env.npm_config_dry_run || process.env.PUBLISH_OK, 'Set PUBLISH_OK=1 to publish')\""
   }
 }
