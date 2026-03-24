@@ -2,6 +2,13 @@
 # Internal dev script for the runctl package itself.
 # Not shipped to consumers (excluded from "files" in package.json).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Load local env file for commands like publish.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT/.env"
+  set +a
+fi
 # shellcheck source=lib/run-lib.sh
 source "$ROOT/lib/run-lib.sh"
 
