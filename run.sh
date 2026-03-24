@@ -14,6 +14,7 @@ Usage: ./run.sh <command>
   status         This repo's .run state
   lib-path       Print path to lib/run-lib.sh
   env-expand     Run env manifest expander (pass args after env-expand)
+  publish        Publish package to npm (requires npm_token or NPM_TOKEN)
   help
 EOF
 }
@@ -38,6 +39,23 @@ main() {
     env-expand)
       exec node "$ROOT/scripts/expand-env-manifest.mjs" "$@"
       ;;
+  publish)
+    local token="${NPM_TOKEN:-${npm_token:-}}"
+    if [[ -z "$token" ]]; then
+      echo "run.sh publish: missing token. Set NPM_TOKEN or npm_token (for example in .env)." >&2
+      exit 1
+    fi
+    export NODE_AUTH_TOKEN="$token"
+    export PUBLISH_OK=1
+    if command -v pnpm >/dev/null 2>&1; then
+      (cd "$ROOT" && pnpm publish --access public --no-git-checks "$@")
+    elif command -v npm >/dev/null 2>&1; then
+      (cd "$ROOT" && npm publish --access public "$@")
+    else
+      echo "run.sh publish: install pnpm (preferred) or npm" >&2
+      exit 1
+    fi
+    ;;
     help | -h | --help)
       usage
       ;;

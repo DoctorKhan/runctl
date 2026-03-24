@@ -1,5 +1,5 @@
 {
-  "name": "runctl",
+  "name": "@zendero/runctl",
   "version": "0.1.0",
   "description": "Picks a free port, runs your dev server in the background, and keeps PID + port state in .run/ so projects don't collide.",
   "author": "DoctorKhan",
