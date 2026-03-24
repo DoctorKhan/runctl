@@ -1,4 +1,32 @@
+# runctl runtime state
 .run/
-.env.local
-.env.vercel.local
+
+# local environment/secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
 env.manifest
+
+# dependencies
+node_modules/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# build output
+dist/
+build/
+.next/
+coverage/
+
+# caches / temp
+.cache/
+.turbo/
+.vercel/
+.DS_Store
+*.tmp
