@@ -36,6 +36,19 @@ validate_dist_tag() {
   esac
 }
 
+package_field() {
+  local field="$1"
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const f = path.join(process.argv[1], "package.json");
+    const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
+    const key = process.argv[2];
+    if (!pkg[key]) process.exit(1);
+    process.stdout.write(String(pkg[key]));
+  ' "$ROOT" "$field"
+}
+
 main() {
   local cmd="${1:-help}"
   shift || true
@@ -69,10 +82,37 @@ main() {
     fi
     export NODE_AUTH_TOKEN="$token"
     export PUBLISH_OK=1
+    local pkg_name pkg_version remote_version
+    pkg_name="$(package_field name)"
+    pkg_version="$(package_field version)"
+    remote_version="$(npm view "${pkg_name}@${pkg_version}" version 2>/dev/null || true)"
+
+    local is_dry_run=0
+    local arg
+    for arg in "$@"; do
+      if [[ "$arg" == "--dry-run" ]]; then
+        is_dry_run=1
+        break
+      fi
+    done
+
+    if [[ -n "$remote_version" && "$is_dry_run" -eq 0 ]]; then
+      echo "run.sh publish: ${pkg_name}@${pkg_version} already exists; bumping patch version..."
+      if command -v pnpm >/dev/null 2>&1; then
+        (cd "$ROOT" && pnpm version patch --no-git-tag-version)
+      else
+        (cd "$ROOT" && npm version patch --no-git-tag-version)
+      fi
+      pkg_version="$(package_field version)"
+      echo "run.sh publish: publishing ${pkg_name}@${pkg_version} with dist-tag '${dist_tag}'"
+    elif [[ -n "$remote_version" ]]; then
+      echo "run.sh publish: ${pkg_name}@${pkg_version} already exists; not bumping during --dry-run"
+    fi
+
     if command -v pnpm >/dev/null 2>&1; then
       (cd "$ROOT" && pnpm publish --access public --tag "$dist_tag" --no-git-checks "$@")
     elif command -v npm >/dev/null 2>&1; then
-      (cd "$ROOT" && npm publish --access public --tag "$dist_tag" "$@")
+      (cd "$ROOT" && npm publish --access public --tag "$dist_tag" --no-git-checks "$@")
     else
       echo "run.sh publish: install pnpm (preferred) or npm" >&2
       exit 1
