@@ -22,10 +22,10 @@ pnpm add -D runctl          # or npm install -D / yarn add -D
 pnpm add -g runctl           # or npm install -g
 ```
 
-**One-liner (from GitHub, pre-publish):**
+**One-liner (from GitHub):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
+curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | bash
 ```
 
 ---
@@ -89,4 +89,4 @@ Add scripts to your `package.json`:
 
 [`examples/consumer-package.json`](examples/consumer-package.json) · [`docs/vercel-and-env.md`](docs/vercel-and-env.md) · [`examples/env.manifest.example`](examples/env.manifest.example)
 
-**Develop this repo:** `pnpm install` → `./run.sh list`
+**Develop this repo:** `pnpm install` → `./run.sh ports`

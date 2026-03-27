@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Install runctl globally (needs Node 18+ and npm or pnpm).
-#   curl -fsSL https://raw.githubusercontent.com/DoctorKhan/devport-kit/main/scripts/install-global.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | bash
 # Registry: RUNCTL_PACKAGE=runctl curl -fsSL … | bash
 # Scoped: RUNCTL_PACKAGE=@your-org/runctl curl -fsSL … | bash
 set -eu

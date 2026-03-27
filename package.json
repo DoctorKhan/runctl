@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "description": "Picks a free port, runs your dev server in the background, and keeps PID + port state in .run/ so projects don't collide.",
   "author": "DoctorKhan",
-  "homepage": "https://github.com/DoctorKhan/devport-kit#readme",
-  "bugs": "https://github.com/DoctorKhan/devport-kit/issues",
+  "homepage": "https://github.com/DoctorKhan/runctl#readme",
+  "bugs": "https://github.com/DoctorKhan/runctl/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DoctorKhan/devport-kit.git"
+    "url": "https://github.com/DoctorKhan/runctl.git"
   },
   "license": "MIT",
   "keywords": ["runctl", "dev", "dev-server", "ports", "pid", "vercel", "dotenv", "vite", "next"],
