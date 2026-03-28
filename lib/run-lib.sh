@@ -90,6 +90,14 @@ run_pid_alive() {
   kill -0 "$1" 2>/dev/null
 }
 
+run_pid_listens_on_port() {
+  local pid="$1"
+  local port="$2"
+  [[ -n "$pid" && -n "$port" ]] || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | grep -qx "$pid"
+}
+
 run_port_listening() {
   local port="$1"
   command -v lsof >/dev/null 2>&1 || return 1
@@ -297,13 +305,31 @@ run_daemon_start() {
   local logf="$RUN_LOCAL_STATE/logs/${name}.log"
   if [[ -f "$pidf" ]]; then
     local oldpid
+    local port=""
+    local port_service=""
     oldpid="$(cat "$pidf")"
+    if [[ -f "$RUN_LOCAL_STATE/ports.env" ]]; then
+      while IFS='=' read -r k v; do
+        case "$k" in
+          PORT) port="$v" ;;
+          RUN_DEV_SERVICE) port_service="$v" ;;
+        esac
+      done <"$RUN_LOCAL_STATE/ports.env"
+    fi
     if run_pid_alive "$oldpid"; then
-      echo "run_daemon_start: ${name} already running (pid $oldpid)" >&2
-      return 1
+      if [[ -n "$port" ]] && [[ -z "$port_service" || "$port_service" == "$name" ]] && run_pid_listens_on_port "$oldpid" "$port"; then
+        echo "run_daemon_start: ${name} already running (pid $oldpid)" >&2
+        return 1
+      fi
+      if [[ -z "$port" ]]; then
+        echo "run_daemon_start: ${name} already running (pid $oldpid)" >&2
+        return 1
+      fi
+      echo "run_daemon_start: cleared stale pid for ${name} (pid $oldpid not listening on port $port)" >&2
+    else
+      echo "run_daemon_start: cleared stale pid for ${name} (was $oldpid)" >&2
     fi
     rm -f "$pidf"
-    echo "run_daemon_start: cleared stale pid for ${name} (was $oldpid)" >&2
   fi
   nohup "$@" >>"$logf" 2>&1 &
   local pid=$!
@@ -414,7 +440,7 @@ run_global_gc() {
       stale=1
     fi
     if [[ "$stale" -eq 0 ]] && [[ -n "$pid" ]] && command -v lsof >/dev/null 2>&1; then
-      if ! lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | grep -qx "$pid"; then
+      if ! run_pid_listens_on_port "$pid" "$port"; then
         stale=1
       fi
     fi
