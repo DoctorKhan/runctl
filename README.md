@@ -24,48 +24,34 @@ pnpm add -D @zendero/runctl          # or npm install -D / yarn add -D
 pnpm add -g @zendero/runctl           # or npm install -g
 ```
 
-**Global install from GitHub only (no npmjs):**
+**Global install via curl** — pick one script (`scripts/` on `main`):
+
+| Script | What it does |
+|--------|----------------|
+| [`install-global-npm.sh`](scripts/install-global-npm.sh) | npm registry only |
+| [`install-global-git.sh`](scripts/install-global-git.sh) | GitHub only (`main` by default) |
+| [`install-global.sh`](scripts/install-global.sh) | registry first, then GitHub if that fails |
 
 ```bash
+
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global-npm.sh" | bash   # npmjs only
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global-git.sh" | bash   # GitHub only
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash       # npmjs, then GitHub fallback
+```
+
+Optional env: `RUNCTL_PACKAGE` (npm name), `RUNCTL_GIT` (git URL or `github:…#ref`).
+
+**Without curl** — same three modes:
+
+```bash
+pnpm add -g @zendero/runctl
 pnpm add -g "github:DoctorKhan/runctl#main"
 ```
 
-If you use npm only:
-
-```bash
-npm install -g "git+https://github.com/DoctorKhan/runctl.git#main"
-```
-
-**Same thing via the install script (curl, Git only):**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | RUNCTL_FROM_GIT=1 bash
-```
-
-**One-liner (npm first, GitHub fallback):** `scripts/install-global.sh` runs `pnpm add -g @zendero/runctl` (or `npm install -g`). If that fails (offline, 404, auth), it falls back to Git. Override the Git URL with `RUNCTL_GIT=…`.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | bash
-```
-
-**Directly from this repository (git, project dependency)** — latest `main` without an npm publish:
+**Project dependency from GitHub** (not global): dependency resolves to **`@zendero/runctl`**. Reinstall to pull the latest `main`:
 
 ```bash
 pnpm add -D "github:DoctorKhan/runctl#main"
-# or full URL
-pnpm add -D "git+https://github.com/DoctorKhan/runctl.git#main"
-```
-
-In `package.json` the dependency resolves to **`@zendero/runctl`** (the name in this repo’s `package.json`). To **pull the latest `main`** after new commits, reinstall (pnpm/npm do not always move git deps on a plain `update`):
-
-```bash
-pnpm add -D "github:DoctorKhan/runctl#main"
-```
-
-npm (no pnpm):
-
-```bash
-npm install -D github:DoctorKhan/runctl#main
 ```
 
 ---
