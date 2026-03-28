@@ -118,3 +118,5 @@ Add scripts to your `package.json`:
 [`examples/consumer-package.json`](examples/consumer-package.json) · [`docs/vercel-and-env.md`](docs/vercel-and-env.md) · [`examples/env.manifest.example`](examples/env.manifest.example)
 
 **Develop this repo:** `pnpm install` → `./run.sh ports`
+
+**Publish (maintainers):** put `NPM_TOKEN` in `.env`. The npm CLI expects `NODE_AUTH_TOKEN`; `run.sh` maps `NPM_TOKEN` → `NODE_AUTH_TOKEN` after loading `.env`. Check auth with `./run.sh npm-whoami`, then `./run.sh release latest`.

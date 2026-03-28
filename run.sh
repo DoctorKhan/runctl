@@ -9,6 +9,14 @@ if [[ -f "$ROOT/.env" ]]; then
   source "$ROOT/.env"
   set +a
 fi
+# npm CLI uses NODE_AUTH_TOKEN; .env often has NPM_TOKEN or npm_token only.
+if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+  if [[ -n "${NPM_TOKEN:-}" ]]; then
+    export NODE_AUTH_TOKEN="$NPM_TOKEN"
+  elif [[ -n "${npm_token:-}" ]]; then
+    export NODE_AUTH_TOKEN="$npm_token"
+  fi
+fi
 # shellcheck source=lib/run-lib.sh
 source "$ROOT/lib/run-lib.sh"
 
@@ -21,8 +29,9 @@ Usage: ./run.sh <command>
   status         This repo's .run state
   lib-path       Print path to lib/run-lib.sh
   env-expand     Run env manifest expander (pass args after env-expand)
-  publish [tag]  Publish to npm (loads .env; use NPM_TOKEN)
-  release [tag]  Same as publish (default dist-tag: latest)
+  publish [all] [tag]  Publish to npm (loads .env; NPM_TOKEN). Optional "all" matches monorepo habits.
+  release [all] [tag]  Same as publish (default dist-tag: latest)
+  npm-whoami       Run npm whoami (uses NPM_TOKEN → NODE_AUTH_TOKEN from .env)
   help
 EOF
 }
@@ -75,7 +84,22 @@ main() {
     env-expand)
       exec node "$ROOT/scripts/expand-env-manifest.mjs" "$@"
       ;;
+    npm-whoami)
+      command -v npm >/dev/null 2>&1 || {
+        echo "run.sh npm-whoami: npm not found" >&2
+        exit 1
+      }
+      if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+        echo "run.sh npm-whoami: set NPM_TOKEN or NODE_AUTH_TOKEN in .env" >&2
+        exit 1
+      fi
+      npm whoami
+      ;;
     publish | release)
+    # Optional "all" (elata-style): this repo has one package; "all" is ignored.
+    if [[ "${1:-}" == "all" ]]; then
+      shift
+    fi
     local dist_tag="${1:-latest}"
     validate_dist_tag "$dist_tag" || exit 1
     if [[ $# -gt 0 ]]; then
@@ -116,10 +140,21 @@ main() {
       echo "run.sh ${cmd}: ${pkg_name}@${pkg_version} already exists; not bumping during --dry-run"
     fi
 
+    _publish_hint() {
+      echo "run.sh ${cmd}: publish failed." >&2
+      echo "  For scoped packages (@scope/name), npm often reports 403/404 when the account or token cannot publish that scope — not a bad tarball." >&2
+      echo "  Fix: npmjs.com → Access Tokens with read/write for @scope, or \`npm login\` as an owner of the package." >&2
+    }
     if command -v pnpm >/dev/null 2>&1; then
-      (cd "$ROOT" && pnpm publish --access public --tag "$dist_tag" --no-git-checks "$@")
+      (cd "$ROOT" && pnpm publish --access public --tag "$dist_tag" --no-git-checks "$@") || {
+        _publish_hint
+        exit 1
+      }
     elif command -v npm >/dev/null 2>&1; then
-      (cd "$ROOT" && npm publish --access public --tag "$dist_tag" --no-git-checks "$@")
+      (cd "$ROOT" && npm publish --access public --tag "$dist_tag" --no-git-checks "$@") || {
+        _publish_hint
+        exit 1
+      }
     else
       echo "run.sh ${cmd}: install pnpm (preferred) or npm" >&2
       exit 1
