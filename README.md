@@ -27,15 +27,25 @@ pnpm add -g @zendero/runctl           # or npm install -g
 **Global install via curl** uses a single script: [`scripts/install-global.sh`](scripts/install-global.sh)
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
+  bash
 ```
 
 With no arguments, `install-global.sh` prompts on a TTY; otherwise it defaults to registry install with Git fallback. Pass arguments to force a mode:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --registry
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --auto
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --git --ref main
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
+  bash -s -- --registry
+```
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
+  bash -s -- --auto
+```
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
+  bash -s -- --git --ref main
 ```
 
 Optional flags: `--pm pnpm|npm`, `--ref <git-ref>`. Optional env: `RUNCTL_PACKAGE`, `RUNCTL_GIT_BASE`, `RUNCTL_GIT_REF`.
