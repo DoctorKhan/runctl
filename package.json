@@ -37,6 +37,9 @@
   ],
   "scripts": {
     "run": "bash ./run.sh",
+    "doctor": "bash ./run.sh doctor",
+    "release-check": "bash ./run.sh release-check",
+    "promote": "bash ./run.sh promote",
     "release": "bash ./run.sh release latest",
     "env:expand": "node ./scripts/expand-env-manifest.mjs",
     "link-global": "pnpm link --global",

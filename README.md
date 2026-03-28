@@ -24,24 +24,23 @@ pnpm add -D @zendero/runctl          # or npm install -D / yarn add -D
 pnpm add -g @zendero/runctl           # or npm install -g
 ```
 
-**Global install via curl** — pick one script (`scripts/` on `main`):
-
-| Script | What it does |
-|--------|----------------|
-| [`install-global-npm.sh`](scripts/install-global-npm.sh) | npm registry only |
-| [`install-global-git.sh`](scripts/install-global-git.sh) | GitHub only (`main` by default) |
-| [`install-global.sh`](scripts/install-global.sh) | registry first, then GitHub if that fails |
+**Global install via curl** uses a single script: [`scripts/install-global.sh`](scripts/install-global.sh)
 
 ```bash
-
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global-npm.sh" | bash   # npmjs only
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global-git.sh" | bash   # GitHub only
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash       # npmjs, then GitHub fallback
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash
 ```
 
-Optional env: `RUNCTL_PACKAGE` (npm name), `RUNCTL_GIT` (git URL or `github:…#ref`).
+With no arguments, `install-global.sh` prompts on a TTY; otherwise it defaults to registry install with Git fallback. Pass arguments to force a mode:
 
-**Without curl** — same three modes:
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --registry
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --auto
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --git --ref main
+```
+
+Optional flags: `--pm pnpm|npm`, `--ref <git-ref>`. Optional env: `RUNCTL_PACKAGE`, `RUNCTL_GIT_BASE`, `RUNCTL_GIT_REF`.
+
+**Without curl:**
 
 ```bash
 pnpm add -g @zendero/runctl
@@ -117,6 +116,14 @@ Add scripts to your `package.json`:
 
 [`examples/consumer-package.json`](examples/consumer-package.json) · [`docs/vercel-and-env.md`](docs/vercel-and-env.md) · [`examples/env.manifest.example`](examples/env.manifest.example)
 
-**Develop this repo:** `pnpm install` → `./run.sh ports`
+**Develop this repo:** `pnpm install` → `./run.sh` (default **doctor**, like `elata-bio-sdk/run.sh`) → `./run.sh ports`
 
-**Publish (maintainers):** put `NPM_TOKEN` in `.env`. The npm CLI expects `NODE_AUTH_TOKEN`; `run.sh` maps `NPM_TOKEN` → `NODE_AUTH_TOKEN` after loading `.env`. Check auth with `./run.sh npm-whoami`, then `./run.sh release latest`.
+**Publish (maintainers)** — workflow similar to elata’s release preflight, scaled for one package:
+
+| Step | Command |
+|------|--------|
+| Preflight | `./run.sh release-check` or `pnpm run release-check` |
+| Publish | `./run.sh release latest` or `pnpm run release` |
+| Promote dist-tag | After publishing under `next`, `./run.sh promote` sets **latest** for the version in `package.json` |
+
+Put `NPM_TOKEN` in `.env`. `release` / `npm-whoami` use a **temporary `NPM_CONFIG_USERCONFIG`** so a stale `~/.npmrc` token does not override `.env` (npm 10+ / pnpm). Token lines can use `NPM_TOKEN=` or `npm_token=`; quoted values are supported without `source`-ing secrets as shell code first.
