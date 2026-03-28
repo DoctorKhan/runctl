@@ -21,9 +21,15 @@ Usage: ./run.sh <command>
   status         This repo's .run state
   lib-path       Print path to lib/run-lib.sh
   env-expand     Run env manifest expander (pass args after env-expand)
-  publish [tag]  Publish package to npm (default tag: latest; supports: latest, next)
+  publish [tag]  Publish to npm (loads .env; use NPM_TOKEN)
+  release [tag]  Same as publish (default dist-tag: latest)
   help
 EOF
+}
+
+# Token for npm publish: NPM_TOKEN from .env (preferred), then NODE_AUTH_TOKEN, then npm_token.
+npm_publish_token() {
+  printf '%s' "${NPM_TOKEN:-${NODE_AUTH_TOKEN:-${npm_token:-}}}"
 }
 
 validate_dist_tag() {
@@ -69,15 +75,16 @@ main() {
     env-expand)
       exec node "$ROOT/scripts/expand-env-manifest.mjs" "$@"
       ;;
-    publish)
+    publish | release)
     local dist_tag="${1:-latest}"
     validate_dist_tag "$dist_tag" || exit 1
     if [[ $# -gt 0 ]]; then
       shift
     fi
-    local token="${NPM_TOKEN:-${npm_token:-}}"
+    local token
+    token="$(npm_publish_token)"
     if [[ -z "$token" ]]; then
-      echo "run.sh publish: missing token. Set NPM_TOKEN or npm_token (for example in .env)." >&2
+      echo "run.sh ${cmd}: missing npm token. Set NPM_TOKEN in .env (or NODE_AUTH_TOKEN / npm_token)." >&2
       exit 1
     fi
     export NODE_AUTH_TOKEN="$token"
@@ -97,16 +104,16 @@ main() {
     done
 
     if [[ -n "$remote_version" && "$is_dry_run" -eq 0 ]]; then
-      echo "run.sh publish: ${pkg_name}@${pkg_version} already exists; bumping patch version..."
+      echo "run.sh ${cmd}: ${pkg_name}@${pkg_version} already exists; bumping patch version..."
       if command -v pnpm >/dev/null 2>&1; then
         (cd "$ROOT" && pnpm version patch --no-git-tag-version)
       else
         (cd "$ROOT" && npm version patch --no-git-tag-version)
       fi
       pkg_version="$(package_field version)"
-      echo "run.sh publish: publishing ${pkg_name}@${pkg_version} with dist-tag '${dist_tag}'"
+      echo "run.sh ${cmd}: publishing ${pkg_name}@${pkg_version} with dist-tag '${dist_tag}'"
     elif [[ -n "$remote_version" ]]; then
-      echo "run.sh publish: ${pkg_name}@${pkg_version} already exists; not bumping during --dry-run"
+      echo "run.sh ${cmd}: ${pkg_name}@${pkg_version} already exists; not bumping during --dry-run"
     fi
 
     if command -v pnpm >/dev/null 2>&1; then
@@ -114,7 +121,7 @@ main() {
     elif command -v npm >/dev/null 2>&1; then
       (cd "$ROOT" && npm publish --access public --tag "$dist_tag" --no-git-checks "$@")
     else
-      echo "run.sh publish: install pnpm (preferred) or npm" >&2
+      echo "run.sh ${cmd}: install pnpm (preferred) or npm" >&2
       exit 1
     fi
     ;;

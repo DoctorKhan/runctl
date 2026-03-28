@@ -37,6 +37,7 @@
   ],
   "scripts": {
     "run": "bash ./run.sh",
+    "release": "bash ./run.sh release latest",
     "env:expand": "node ./scripts/expand-env-manifest.mjs",
     "link-global": "pnpm link --global",
     "prepublishOnly": "node -e \"assert(process.env.npm_config_dry_run || process.env.PUBLISH_OK, 'Set PUBLISH_OK=1 to publish')\""
