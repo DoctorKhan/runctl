@@ -10,58 +10,99 @@ Picks a **free port**, runs your **dev server in the background**, and keeps **P
 
 ## Install
 
-The published package on npm is **`@zendero/runctl`**. The CLI binary on your PATH is still **`runctl`**.
+Published name on npm is **`@zendero/runctl`**; the CLI on your PATH is **`runctl`**.
 
-**From the npm registry (recommended):**
+| Goal | What to run |
+|------|-------------|
+| Use runctl **inside one repo** (recommended) | `pnpm add -D @zendero/runctl` — also `npm install -D` / `yarn add -D` |
+| **`runctl` everywhere** (global) | `pnpm add -g @zendero/runctl` or the curl installer below |
+| Track **main from GitHub** as a dev dependency | `pnpm add -D "github:DoctorKhan/runctl#main"` (still resolves as `@zendero/runctl`; reinstall to update) |
 
-```bash
-pnpm add -D @zendero/runctl          # or npm install -D / yarn add -D
-```
+### Global install: package manager vs script
 
-**Global CLI** (`runctl` on your PATH everywhere):
-
-```bash
-pnpm add -g @zendero/runctl           # or npm install -g
-```
-
-**Global install via curl** uses a single script: [`scripts/install-global.sh`](scripts/install-global.sh)
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
-  bash
-```
-
-With no arguments, `install-global.sh` prompts on a TTY; otherwise it defaults to registry install with Git fallback. Pass arguments to force a mode:
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
-  bash -s -- --registry
-```
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
-  bash -s -- --auto
-```
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" |
-  bash -s -- --git --ref main
-```
-
-Optional flags: `--pm pnpm|npm`, `--ref <git-ref>`. Optional env: `RUNCTL_PACKAGE`, `RUNCTL_GIT_BASE`, `RUNCTL_GIT_REF`.
-
-**Without curl:**
+**Package manager** is the straightforward choice if you already use pnpm or npm:
 
 ```bash
 pnpm add -g @zendero/runctl
+```
+
+From Git only:
+
+```bash
 pnpm add -g "github:DoctorKhan/runctl#main"
 ```
 
-**Project dependency from GitHub** (not global): dependency resolves to **`@zendero/runctl`**. Reinstall to pull the latest `main`:
+**[`scripts/install-global.sh`](scripts/install-global.sh)** is for “one command” setup, **CI**, or when you want **npm first, then Git** without writing two install lines yourself. It requires **bash**, **pnpm or npm** on `PATH`, and network access.
+
+One-liner (same URL the script header documents):
 
 ```bash
-pnpm add -D "github:DoctorKhan/runctl#main"
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash
 ```
+
+Pass script arguments after `bash` (stdin pipe has no argv). To pick a **mode** explicitly:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --registry
+```
+
+### `install-global.sh` reference
+
+If you do **not** pass **`--registry`**, **`--git`**, **`--auto`**, or **`--interactive`**: on an **interactive TTY** with **`CI` not `1`**, the script **prompts** for install source (and related choices). Otherwise it behaves like **`--auto`**: **global install from the npm registry** first; if that fails, **retry from Git** (same URL/ref as `--git`).
+
+**Modes** — each mode picks *where* the global install comes from. Under the hood the script runs **`pnpm add -g …`** or **`npm install -g …`** once per successful path (auto can run **twice**: registry attempt, then Git if the first fails).
+
+| Mode | What it does | When to use it |
+|------|----------------|----------------|
+| **`--registry`** | **Only** installs `RUNCTL_PACKAGE` (default `@zendero/runctl`) from the npm registry. **No** Git fallback. | You want the published package only—e.g. CI that must not clone Git, or you know npm is enough. |
+| **`--git`** | **Only** installs from Git: `RUNCTL_GIT_BASE` + `#` + ref (default ref `main`, overridable with `--ref`). **No** registry attempt first. | You want `main`/a branch/tag from the repo, or the registry is unreachable. |
+| **`--auto`** | Tries **`--registry`** first; on **failure**, runs the same Git install as **`--git`**. | Headless installs, pipes, CI: resilient default when you’re fine with either source. |
+| **`--interactive`** | Prompts for **registry / git / auto**, optional **Git ref** when git/auto applies, and **pnpm vs npm** if both exist—**only** when a TTY is available. | You want to choose at install time instead of memorizing flags. |
+
+If **`--interactive`** is requested but there is **no usable TTY** (or `CI=1`), the script **falls back to `--auto`** and prints a short notice.
+
+**Flags**
+
+| Flag | Meaning |
+|------|---------|
+| `--pm pnpm` \| `--pm npm` | Use that package manager (must exist on `PATH`) |
+| `--ref <ref>` | Git ref for `--git` or for the Git step of `--auto` (default: `main`) |
+
+**Environment variables** (optional)
+
+| Variable | Purpose |
+|----------|---------|
+| `RUNCTL_PACKAGE` | npm package name (default: `@zendero/runctl`) |
+| `RUNCTL_GIT_BASE` | Git URL without fragment (default: `git+https://github.com/DoctorKhan/runctl.git`) |
+| `RUNCTL_GIT_REF` | Default ref when not overridden by `--ref` (default: `main`) |
+
+**Examples**
+
+Registry only (good for locked-down CI that should not hit Git):
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --registry
+```
+
+Explicit auto (same as non-interactive default, but spelled out):
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --auto
+```
+
+Git only, specific ref:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --git --ref main
+```
+
+Use npm explicitly (e.g. no pnpm on the machine):
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --pm npm --registry
+```
+
+`--help` on the script prints the same usage summary.
 
 ---
 
@@ -100,7 +141,7 @@ Add scripts to your `package.json`:
 | `runctl ports gc` | Clean up stale port claims |
 | `runctl env expand <manifest> [--out file]` | Generate `.env.local` from manifest |
 | `runctl doctor [dir]` | Check Node 18+, `lsof`, package manager, `package.json` |
-| `runctl update` | Update the global `@zendero/runctl` install |
+| `runctl update` | Refresh global CLI: default **`auto`** (npm `@latest`, then Git). **`runctl update npm`** / **`git`** / **`auto`** or flags **`--registry`** / **`--git`** / **`--auto`**; **`runctl update --help`**; env `RUNCTL_PACKAGE`, `RUNCTL_GIT_BASE`, `RUNCTL_GIT_REF` (aligned with [`install-global.sh`](scripts/install-global.sh)) |
 | `runctl version` | Print package version and install path |
 
 **Monorepo:** `runctl start ./apps/web --script dev:server`

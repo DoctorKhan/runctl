@@ -25,7 +25,7 @@ ${_y}Commands${_r}
   ${_c}ports gc${_r}                      Clean up stale port claims
   ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
   ${_c}doctor${_r}                        Check Node, tooling, and project basics
-  ${_c}update${_r}                        Update runctl to latest version
+  ${_c}update${_r} [npm|git|auto] [opts]  Update global runctl ${_d}(default: auto; see runctl update --help)${_r}
 
 ${_y}Options${_r}
   ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
@@ -174,16 +174,182 @@ cmd_env() {
   esac
 }
 
-cmd_update() {
-  echo "runctl update: installing latest @zendero/runctl..."
+cmd_update_usage() {
+  cat <<EOF
+${_b}runctl update${_r} — refresh the global CLI (pnpm/npm global install)
+
+${_y}Usage:${_r}  runctl update [npm|git|auto] [options]
+
+${_y}Source${_r} ${_d}(pick one; default when omitted: ${_c}auto${_r})${_r}
+  ${_c}npm${_r} | ${_c}--registry${_r}   Latest from npm only (${_d}${RUNCTL_PACKAGE:-@zendero/runctl}@latest${_r})
+  ${_c}git${_r} | ${_c}--git${_r}         From Git only (${_d}RUNCTL_GIT_BASE + ref${_r})
+  ${_c}auto${_r} | ${_c}--auto${_r}      Try npm @latest, then Git if that fails
+
+${_y}Options${_r}
+  ${_c}--pm${_r} ${_d}pnpm|npm${_r}     Package manager ${_d}(default: pnpm if on PATH, else npm)${_r}
+  ${_c}--ref${_r} ${_d}<ref>${_r}      Git ref for --git / Git fallback ${_d}(default: RUNCTL_GIT_REF or main)${_r}
+  ${_c}-h${_r}, ${_c}--help${_r}              This help
+
+${_y}Environment${_r} ${_d}(optional; same as install-global.sh)${_r}
+  RUNCTL_PACKAGE   npm name ${_d}(default: @zendero/runctl)${_r}
+  RUNCTL_GIT_BASE  Git URL without fragment ${_d}(default: git+https://github.com/DoctorKhan/runctl.git)${_r}
+  RUNCTL_GIT_REF   default Git ref ${_d}(default: main)${_r}
+EOF
+}
+
+cmd_update_pick_pm() {
+  if [[ -n "$1" ]]; then
+    case "$1" in
+      pnpm | npm) ;;
+      *)
+        echo "runctl update: unsupported --pm: $1 (use pnpm or npm)" >&2
+        return 1
+        ;;
+    esac
+    if ! command -v "$1" >/dev/null 2>&1; then
+      echo "runctl update: package manager not on PATH: $1" >&2
+      return 1
+    fi
+    printf '%s' "$1"
+    return 0
+  fi
   if command -v pnpm >/dev/null 2>&1; then
-    pnpm add -g @zendero/runctl@latest
-  elif command -v npm >/dev/null 2>&1; then
-    npm install -g @zendero/runctl@latest
-  else
-    echo "runctl: pnpm or npm required to update." >&2
+    printf 'pnpm'
+    return 0
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    printf 'npm'
+    return 0
+  fi
+  echo "runctl update: pnpm or npm required on PATH." >&2
+  return 1
+}
+
+cmd_update() {
+  local MODE="" PM="" GIT_REF="${RUNCTL_GIT_REF:-main}"
+  local PKG="${RUNCTL_PACKAGE:-@zendero/runctl}"
+  local GIT_BASE="${RUNCTL_GIT_BASE:-git+https://github.com/DoctorKhan/runctl.git}"
+  local -a POS=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --registry)
+        MODE="registry"
+        shift
+        ;;
+      --git)
+        MODE="git"
+        shift
+        ;;
+      --auto)
+        MODE="auto"
+        shift
+        ;;
+      --pm)
+        [[ $# -ge 2 ]] || {
+          echo "runctl update: --pm requires a value" >&2
+          exit 1
+        }
+        PM="$2"
+        shift 2
+        ;;
+      --ref)
+        [[ $# -ge 2 ]] || {
+          echo "runctl update: --ref requires a value" >&2
+          exit 1
+        }
+        GIT_REF="$2"
+        shift 2
+        ;;
+      -h | --help)
+        cmd_update_usage
+        exit 0
+        ;;
+      -*)
+        echo "runctl update: unknown option: $1" >&2
+        cmd_update_usage >&2
+        exit 1
+        ;;
+      *)
+        POS+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  local POS_MODE=""
+  if [[ ${#POS[@]} -gt 1 ]]; then
+    echo "runctl update: too many arguments (${POS[*]}). Use at most one of: npm, git, auto" >&2
     exit 1
   fi
+  if [[ ${#POS[@]} -eq 1 ]]; then
+    case "${POS[0]}" in
+      npm)
+        POS_MODE="registry"
+        ;;
+      git)
+        POS_MODE="git"
+        ;;
+      auto)
+        POS_MODE="auto"
+        ;;
+      *)
+        echo "runctl update: unknown argument: ${POS[0]} (expected: npm, git, auto — runctl update --help)" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  if [[ -n "$MODE" && -n "$POS_MODE" && "$MODE" != "$POS_MODE" ]]; then
+    echo "runctl update: conflicting source (npm/git/auto vs --registry/--git/--auto)" >&2
+    exit 1
+  fi
+  if [[ -n "$POS_MODE" ]]; then
+    MODE="$POS_MODE"
+  fi
+  [[ -n "$MODE" ]] || MODE="auto"
+
+  local pm git_target
+  pm="$(cmd_update_pick_pm "$PM")" || exit 1
+  git_target="${GIT_BASE}#${GIT_REF}"
+
+  _update_registry() {
+    local spec="${PKG}@latest"
+    echo "runctl update: installing latest from registry ($spec)..."
+    if [[ "$pm" == "pnpm" ]]; then
+      pnpm add -g "$spec"
+    else
+      npm install -g "$spec"
+    fi
+  }
+
+  _update_git() {
+    echo "runctl update: installing from Git ($git_target)..."
+    if [[ "$pm" == "pnpm" ]]; then
+      pnpm add -g "$git_target"
+    else
+      npm install -g "$git_target"
+    fi
+  }
+
+  case "$MODE" in
+    registry)
+      _update_registry
+      ;;
+    git)
+      _update_git
+      ;;
+    auto)
+      if _update_registry; then
+        return 0
+      fi
+      echo "runctl update: registry install failed; trying Git..." >&2
+      _update_git
+      ;;
+    *)
+      echo "runctl update: internal error: unknown mode $MODE" >&2
+      exit 1
+      ;;
+  esac
 }
 
 cmd_doctor() {
@@ -287,7 +453,7 @@ main() {
     ports)    cmd_ports "$@" ;;
     env)      cmd_env "$@" ;;
     doctor)   cmd_doctor "$@" ;;
-    update)   cmd_update ;;
+    update)   cmd_update "$@" ;;
 
     # Plumbing
     lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;
