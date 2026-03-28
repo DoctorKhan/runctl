@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-lib.sh — npm package `runctl`: project .run/ + user ~/.run registry.
+# run-lib.sh — npm package `@zendero/runctl`: project .run/ + user ~/.run registry.
 # Requires bash. Port/dev automation requires Node.js >= 18 (see package.json engines).
 # Intentionally no global `set -e` — this file is usually sourced.
 
@@ -96,6 +96,20 @@ run_pid_listens_on_port() {
   [[ -n "$pid" && -n "$port" ]] || return 1
   command -v lsof >/dev/null 2>&1 || return 1
   lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | grep -qx "$pid"
+}
+
+run_local_has_live_service() {
+  local f pid
+  shopt -s nullglob
+  for f in "$RUN_LOCAL_STATE/pids"/*.pid; do
+    pid="$(cat "$f" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && run_pid_alive "$pid"; then
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  shopt -u nullglob
+  return 1
 }
 
 run_port_listening() {

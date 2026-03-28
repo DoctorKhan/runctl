@@ -10,22 +10,48 @@ Picks a **free port**, runs your **dev server in the background**, and keeps **P
 
 ## Install
 
-**In a project (recommended):**
+The published package on npm is **`@zendero/runctl`**. The CLI binary on your PATH is still **`runctl`**.
+
+**From the npm registry (recommended):**
 
 ```bash
-pnpm add -D runctl          # or npm install -D / yarn add -D
+pnpm add -D @zendero/runctl          # or npm install -D / yarn add -D
 ```
 
 **Global CLI** (`runctl` on your PATH everywhere):
 
 ```bash
-pnpm add -g runctl           # or npm install -g
+pnpm add -g @zendero/runctl           # or npm install -g
 ```
 
-**One-liner (from GitHub):**
+**One-liner (tries npm first, then GitHub):** `scripts/install-global.sh` runs `pnpm add -g @zendero/runctl` (or `npm install -g`). If that fails (offline, 404, auth), it falls back to `git+https://github.com/DoctorKhan/runctl.git#main`. Override the fallback with `RUNCTL_GIT=…`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | bash
+```
+
+**Directly from this repository (git)** — use the latest `main` without waiting for an npm publish, or pin a branch/tag:
+
+```bash
+# dev dependency
+pnpm add -D "github:DoctorKhan/runctl#main"
+# or with a full URL (same effect)
+pnpm add -D "git+https://github.com/DoctorKhan/runctl.git#main"
+
+# global
+pnpm add -g "github:DoctorKhan/runctl#main"
+```
+
+In `package.json` the dependency resolves to **`@zendero/runctl`** (the name in this repo’s `package.json`). To **pull the latest `main`** after new commits, reinstall (pnpm/npm do not always move git deps on a plain `update`):
+
+```bash
+pnpm add -D "github:DoctorKhan/runctl#main"
+```
+
+npm (no pnpm):
+
+```bash
+npm install -D github:DoctorKhan/runctl#main
 ```
 
 ---

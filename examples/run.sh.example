@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Optional shell entrypoint — most projects only need package.json scripts.
-# Prerequisite: pnpm add -D runctl   (Node >= 18)
+# Prerequisite: pnpm add -D @zendero/runctl   (Node >= 18)
 
 set -euo pipefail
 
@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 if [[ -z "${RUN_LIB:-}" ]]; then
-  _rp="${RUNCTL_PACKAGE:-runctl}"
+  _rp="${RUNCTL_PACKAGE:-@zendero/runctl}"
   RUN_LIB="$(
     cd "$ROOT" && RUNCTL_PACKAGE="$_rp" node -e "
       const p = require('path');

@@ -12,8 +12,8 @@ Keep a **manifest** (not loaded directly by Next/Vite) that lists each real valu
 - Expand to a generated file that frameworks **do** load:
 
 ```bash
-pnpm exec runctl expand-env env.manifest --out .env.local
-# or: node node_modules/runctl/scripts/expand-env-manifest.mjs env.manifest --out .env.local
+pnpm exec runctl env expand env.manifest --out .env.local
+# or: node node_modules/@zendero/runctl/scripts/expand-env-manifest.mjs env.manifest --out .env.local
 ```
 
 Add **`.env.local`** (and optionally `.env.manifest` if it contains no secrets—usually it *does*, so keep the manifest **gitignored** or use a **`.env.manifest.example`** without real values).

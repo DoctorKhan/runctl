@@ -80,9 +80,17 @@ cmd_start() {
 cmd_open() {
   local proj
   proj="$(_resolve_proj "$@")"
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
   local ports_env="$proj/.run/ports.env"
   if [[ ! -f "$ports_env" ]]; then
     echo "runctl open: no running server found (.run/ports.env missing)" >&2
+    echo "Start one first: runctl start" >&2
+    exit 1
+  fi
+  if ! run_local_has_live_service; then
+    echo "runctl open: no running server found (saved port is stale)" >&2
     echo "Start one first: runctl start" >&2
     exit 1
   fi
@@ -165,11 +173,11 @@ cmd_env() {
 }
 
 cmd_update() {
-  echo "runctl update: installing latest runctl..."
+  echo "runctl update: installing latest @zendero/runctl..."
   if command -v pnpm >/dev/null 2>&1; then
-    pnpm add -g runctl@latest
+    pnpm add -g @zendero/runctl@latest
   elif command -v npm >/dev/null 2>&1; then
-    npm install -g runctl@latest
+    npm install -g @zendero/runctl@latest
   else
     echo "runctl: pnpm or npm required to update." >&2
     exit 1
