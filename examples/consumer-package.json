@@ -4,6 +4,8 @@
     "dev:server": "next dev",
     "dev:stop": "runctl stop",
     "dev:status": "runctl status",
+    "dev:logs": "runctl logs",
+    "doctor": "runctl doctor",
     "ports": "runctl ports",
     "ports:gc": "runctl ports gc",
     "env:expand": "runctl env expand env.manifest --out .env.local"

@@ -83,14 +83,16 @@ Add scripts to your `package.json`:
 
 | Command | What it does |
 |---------|-------------|
-| `runctl start [dir] [--script name]` | Start dev server (picks free port, backgrounds) |
+| `runctl start` \| `runctl dev` | Start dev server (same command; picks free port, backgrounds) |
 | `runctl stop [dir]` | Stop daemons & release ports |
 | `runctl status [dir]` | Show `.run` state for this package |
+| `runctl logs [dir] [service]` | Tail `.run/logs/<service>.log` (default service: `web`) |
 | `runctl ports` | List user-wide port registry (`~/.run`) |
 | `runctl ports gc` | Clean up stale port claims |
 | `runctl env expand <manifest> [--out file]` | Generate `.env.local` from manifest |
-| `runctl update` | Update to latest version |
-| `runctl version` | Print install location |
+| `runctl doctor [dir]` | Check Node 18+, `lsof`, package manager, `package.json` |
+| `runctl update` | Update the global `@zendero/runctl` install |
+| `runctl version` | Print package version and install path |
 
 **Monorepo:** `runctl start ./apps/web --script dev:server`
 

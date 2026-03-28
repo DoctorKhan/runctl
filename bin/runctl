@@ -16,13 +16,15 @@ ${_b}runctl${_r} — dev-server orchestrator & port manager
 ${_y}Usage:${_r}  runctl <command> [options]
 
 ${_y}Commands${_r}
-  ${_c}start${_r} [dir] [--script name]   Start dev server ${_d}(picks free port, backgrounds)${_r}
+  ${_c}start${_r} | ${_c}dev${_r} [dir] [--script name]  Start dev server ${_d}(alias: dev = start)${_r}
   ${_c}open${_r}  [dir]                   Open running dev server in browser
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
+  ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default service: web)${_r}
   ${_c}ports${_r}                         List user-wide port registry (~/.run)
   ${_c}ports gc${_r}                      Clean up stale port claims
   ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
+  ${_c}doctor${_r}                        Check Node, tooling, and project basics
   ${_c}update${_r}                        Update runctl to latest version
 
 ${_y}Options${_r}
@@ -184,21 +186,112 @@ cmd_update() {
   fi
 }
 
+cmd_doctor() {
+  local proj
+  proj="$(pwd)"
+  [[ $# -ge 1 && -d "$1" ]] && proj="$(cd "$1" && pwd)"
+  echo "runctl doctor"
+  local ec=0
+  if command -v node >/dev/null 2>&1 && node -e 'process.exit(parseInt(process.versions.node,10)>=18?0:1)' 2>/dev/null; then
+    printf '  %-12s %s\n' "node:" "$(node -v) (ok)"
+  else
+    printf '  %-12s %s\n' "node:" "missing or < 18 (required)" >&2
+    ec=1
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    printf '  %-12s %s\n' "lsof:" "present (port detection / gc)"
+  else
+    printf '  %-12s %s\n' "lsof:" "missing — install for free-port + ports gc" >&2
+  fi
+  local pm=""
+  if command -v pnpm >/dev/null 2>&1; then pm="pnpm $(pnpm -v 2>/dev/null || echo '')"
+  elif command -v npm >/dev/null 2>&1; then pm="npm $(npm -v 2>/dev/null || echo '')"
+  elif command -v bun >/dev/null 2>&1; then pm="bun $(bun -v 2>/dev/null || echo '')"
+  elif command -v yarn >/dev/null 2>&1; then pm="yarn $(yarn -v 2>/dev/null || echo '')"
+  else
+    pm="none found"
+    ec=1
+  fi
+  printf '  %-12s %s\n' "package mgr:" "$pm"
+  if [[ -f "$proj/package.json" ]]; then
+    printf '  %-12s %s\n' "package.json:" "$proj (ok)"
+  else
+    printf '  %-12s %s\n' "package.json:" "not found in $proj" >&2
+    ec=1
+  fi
+  return "$ec"
+}
+
+cmd_logs() {
+  local proj lines="${RUNCTL_LOG_LINES:-80}"
+  proj="$(pwd)"
+  local -a pos=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -n | --lines)
+        lines="${2:-80}"
+        shift 2
+        ;;
+      -h | --help)
+        echo "Usage: runctl logs [dir] [service]  (default service: web)" >&2
+        echo "       runctl logs [--lines N]" >&2
+        exit 0
+        ;;
+      *)
+        pos+=("$1")
+        shift
+        ;;
+    esac
+  done
+  if [[ ${#pos[@]} -ge 1 && -d "${pos[0]}" ]]; then
+    proj="$(cd "${pos[0]}" && pwd)"
+    pos=("${pos[@]:1}")
+  fi
+  local svc="${pos[0]:-web}"
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
+  local logf="$RUN_LOCAL_STATE/logs/${svc}.log"
+  if [[ ! -f "$logf" ]]; then
+    echo "runctl logs: no file at $logf" >&2
+    if [[ -d "$RUN_LOCAL_STATE/logs" ]]; then
+      echo "Available logs:" >&2
+      ls -1 "$RUN_LOCAL_STATE/logs" 2>/dev/null | sed 's/^/  /' >&2 || true
+    fi
+    exit 1
+  fi
+  echo "runctl logs: $logf (last $lines lines)"
+  tail -n "$lines" "$logf"
+}
+
+cmd_version_print() {
+  local ver="?"
+  if command -v node >/dev/null 2>&1; then
+    ver="$(
+      node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version);' \
+        "$RUNCTL_PKG_ROOT/package.json" 2>/dev/null || echo "?"
+    )"
+  fi
+  printf '%s\n' "runctl $ver — $RUNCTL_PKG_ROOT"
+}
+
 main() {
   local cmd="${1:-help}"
   shift || true
   case "$cmd" in
-    start)    cmd_start "$@" ;;
+    start | dev) cmd_start "$@" ;;
     open)     cmd_open "$@" ;;
     stop)     cmd_stop "$@" ;;
     status)   cmd_status "$@" ;;
+    logs)     cmd_logs "$@" ;;
     ports)    cmd_ports "$@" ;;
     env)      cmd_env "$@" ;;
+    doctor)   cmd_doctor "$@" ;;
     update)   cmd_update ;;
 
     # Plumbing
     lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;
-    version | -v) printf '%s\n' "runctl @ $RUNCTL_PKG_ROOT" ;;
+    version | -v) cmd_version_print ;;
     help | -h | --help) usage ;;
 
     # Hidden backward-compat aliases
