@@ -24,22 +24,36 @@ pnpm add -D @zendero/runctl          # or npm install -D / yarn add -D
 pnpm add -g @zendero/runctl           # or npm install -g
 ```
 
-**One-liner (tries npm first, then GitHub):** `scripts/install-global.sh` runs `pnpm add -g @zendero/runctl` (or `npm install -g`). If that fails (offline, 404, auth), it falls back to `git+https://github.com/DoctorKhan/runctl.git#main`. Override the fallback with `RUNCTL_GIT=…`.
+**Global install from GitHub only (no npmjs):**
+
+```bash
+pnpm add -g "github:DoctorKhan/runctl#main"
+```
+
+If you use npm only:
+
+```bash
+npm install -g "git+https://github.com/DoctorKhan/runctl.git#main"
+```
+
+**Same thing via the install script (curl, Git only):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | RUNCTL_FROM_GIT=1 bash
+```
+
+**One-liner (npm first, GitHub fallback):** `scripts/install-global.sh` runs `pnpm add -g @zendero/runctl` (or `npm install -g`). If that fails (offline, 404, auth), it falls back to Git. Override the Git URL with `RUNCTL_GIT=…`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh | bash
 ```
 
-**Directly from this repository (git)** — use the latest `main` without waiting for an npm publish, or pin a branch/tag:
+**Directly from this repository (git, project dependency)** — latest `main` without an npm publish:
 
 ```bash
-# dev dependency
 pnpm add -D "github:DoctorKhan/runctl#main"
-# or with a full URL (same effect)
+# or full URL
 pnpm add -D "git+https://github.com/DoctorKhan/runctl.git#main"
-
-# global
-pnpm add -g "github:DoctorKhan/runctl#main"
 ```
 
 In `package.json` the dependency resolves to **`@zendero/runctl`** (the name in this repo’s `package.json`). To **pull the latest `main`** after new commits, reinstall (pnpm/npm do not always move git deps on a plain `update`):
