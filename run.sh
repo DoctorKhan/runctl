@@ -73,6 +73,7 @@ usage() {
 Usage: ./run.sh <command>
 
   (no args)      Same as doctor (elata-style default)
+  install        Install dependencies (pnpm preferred; npm fallback)
   ports          Registered ports (~/.run/ports)
   ps             Running programs with ports/projects
   ports-gc       Drop stale registry entries
@@ -155,6 +156,17 @@ main() {
       RUN_SH_TASK="test"
       export RUN_SH_TASK
       (cd "$ROOT" && exec pnpm test)
+      ;;
+    install)
+      RUN_SH_TASK="install"
+      export RUN_SH_TASK
+      if command -v pnpm >/dev/null 2>&1; then
+        (cd "$ROOT" && exec pnpm install)
+      elif command -v npm >/dev/null 2>&1; then
+        (cd "$ROOT" && exec npm install)
+      else
+        die "install pnpm (preferred) or npm"
+      fi
       ;;
     release-check)
       RUN_SH_TASK="release-check"
