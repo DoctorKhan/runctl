@@ -175,7 +175,7 @@ Add scripts to your `package.json`:
 | Step | Command |
 |------|--------|
 | Preflight | `./run.sh release-check` or `pnpm run release-check` |
-| Publish | `./run.sh release latest` or `pnpm run release` |
+| Publish | `./run.sh release latest` or `pnpm run release` (publishes, then commits + pushes release changes if any) |
 | Promote dist-tag | After publishing under `next`, `./run.sh promote` sets **latest** for the version in `package.json` |
 
 Put `NPM_TOKEN` in `.env`. `release` / `npm-whoami` use a **temporary `NPM_CONFIG_USERCONFIG`** so a stale `~/.npmrc` token does not override `.env` (npm 10+ / pnpm). Token lines can use `NPM_TOKEN=` or `npm_token=`; quoted values are supported without `source`-ing secrets as shell code first.

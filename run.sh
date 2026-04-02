@@ -84,7 +84,7 @@ Usage: ./run.sh <command>
   lib-path       Print path to lib/run-lib.sh
   env-expand     Run env manifest expander (pass args after env-expand)
   publish [all] [tag]  Publish to npm (NPM_TOKEN in .env; temp npm userconfig)
-  release [all] [tag]  Same as publish (default dist-tag: latest)
+  release [all] [tag]  Publish to npm, then commit+push local release changes
   promote        npm dist-tag add <pkg>@<version> latest (needs published version)
   npm-whoami     npm whoami via .env token (ignores stale ~/.npmrc)
   help
@@ -115,6 +115,31 @@ validate_dist_tag() {
       return 1
       ;;
   esac
+}
+
+release_commit_and_push_if_needed() {
+  local dist_tag="$1"
+  local pkg_name="$2"
+  local pkg_version="$3"
+  if ! command -v git >/dev/null 2>&1; then
+    echo "run.sh release: git not found; skipping commit/push step" >&2
+    return 0
+  fi
+  if ! git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "run.sh release: not in a git worktree; skipping commit/push step" >&2
+    return 0
+  fi
+  if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+    local branch
+    branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    [[ -n "$branch" && "$branch" != "HEAD" ]] || die "release commit/push requires a branch checkout (not detached HEAD)"
+    git -C "$ROOT" add -A
+    git -C "$ROOT" commit -m "release: publish ${pkg_name}@${pkg_version} (${dist_tag})"
+    git -C "$ROOT" push -u origin "$branch"
+    echo "run.sh release: committed and pushed release changes on $branch"
+  else
+    echo "run.sh release: no local git changes; skipping commit/push"
+  fi
 }
 
 package_field() {
@@ -299,6 +324,9 @@ main() {
       if [[ "$_pub_ok" -ne 1 ]]; then
         _publish_hint
         exit 1
+      fi
+      if [[ "$cmd" == "release" && "$is_dry_run" -eq 0 ]]; then
+        release_commit_and_push_if_needed "$dist_tag" "$pkg_name" "$pkg_version"
       fi
       ;;
     help | -h | --help)
