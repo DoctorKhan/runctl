@@ -330,22 +330,46 @@ cmd_update() {
   pm="$(cmd_update_pick_pm "$PM")" || exit 1
   git_target="${GIT_BASE}#${GIT_REF}"
 
+  _git_base_for_ls_remote() {
+    local base="$1"
+    printf '%s' "${base#git+}"
+  }
+
+  _resolve_git_ref_sha() {
+    local base_url="$1"
+    local ref="$2"
+    local remote sha
+    remote="$(_git_base_for_ls_remote "$base_url")"
+    command -v git >/dev/null 2>&1 || return 1
+    sha="$(git ls-remote "$remote" "$ref" 2>/dev/null | awk 'NR==1{print $1}')"
+    [[ "$sha" =~ ^[0-9a-fA-F]{40}$ ]] || return 1
+    printf '%s' "$sha"
+  }
+
   _update_registry() {
     local spec="${PKG}@latest"
     echo "runctl update: installing latest from registry ($spec)..."
     if [[ "$pm" == "pnpm" ]]; then
-      pnpm add -g "$spec"
+      pnpm add -g --force "$spec"
     else
-      npm install -g "$spec"
+      npm install -g --force "$spec"
     fi
   }
 
   _update_git() {
-    echo "runctl update: installing from Git ($git_target)..."
-    if [[ "$pm" == "pnpm" ]]; then
-      pnpm add -g "$git_target"
+    local sha spec
+    if sha="$(_resolve_git_ref_sha "$GIT_BASE" "$GIT_REF")"; then
+      spec="${GIT_BASE}#${sha}"
+      echo "runctl update: installing from Git ref $GIT_REF (resolved to ${sha:0:12})..."
     else
-      npm install -g "$git_target"
+      spec="$git_target"
+      echo "runctl update: installing from Git ($git_target)..."
+      echo "runctl update: could not resolve ref to SHA; proceeding with ref directly." >&2
+    fi
+    if [[ "$pm" == "pnpm" ]]; then
+      pnpm add -g --force "$spec"
+    else
+      npm install -g --force "$spec"
     fi
   }
 
