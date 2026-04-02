@@ -20,6 +20,7 @@ ${_y}Commands${_r}
   ${_c}open${_r}  [dir]                   Open running dev server in browser
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
+  ${_c}ps${_r}                            List running programs with ports/projects
   ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default service: web)${_r}
   ${_c}ports${_r}                         List user-wide port registry (~/.run)
   ${_c}ports gc${_r}                      Clean up stale port claims
@@ -154,6 +155,23 @@ cmd_ports() {
       exit 1
       ;;
   esac
+}
+
+cmd_ps() {
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_global_list_running
+  local stale="${RUN_LAST_STALE_COUNT:-0}"
+  if [[ "$stale" =~ ^[0-9]+$ ]] && (( stale > 0 )); then
+    echo ""
+    echo "runctl ps: found $stale stale registry entr$( (( stale == 1 )) && echo "y" || echo "ies" ); cleaning..."
+    (run_global_gc >/dev/null 2>&1) &
+    local gc_pid=$!
+    wait "$gc_pid" || true
+    echo "runctl ps: refreshed"
+    echo ""
+    run_global_list_running
+  fi
 }
 
 cmd_env() {
@@ -449,6 +467,7 @@ main() {
     open)     cmd_open "$@" ;;
     stop)     cmd_stop "$@" ;;
     status)   cmd_status "$@" ;;
+    ps)       cmd_ps "$@" ;;
     logs)     cmd_logs "$@" ;;
     ports)    cmd_ports "$@" ;;
     env)      cmd_env "$@" ;;

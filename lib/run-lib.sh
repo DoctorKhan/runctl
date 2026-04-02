@@ -501,6 +501,64 @@ run_global_list_ports() {
   rm -f "$tmp"
 }
 
+run_pid_program_name() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 1
+  ps -p "$pid" -o comm= 2>/dev/null | awk '{$1=$1; print}'
+}
+
+run_global_list_running() {
+  mkdir -p "$RUN_GLOBAL_STATE/ports"
+  local f port tmp pid svc proot _line _k _v prog stale_count
+  stale_count=0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/runlib-running.XXXXXX")"
+  shopt -s nullglob
+  for f in "$RUN_GLOBAL_STATE/ports"/*; do
+    [[ -f "$f" ]] || continue
+    port="$(basename "$f")"
+    [[ "$port" =~ ^[0-9]+$ ]] || continue
+    pid="" svc="" proot="" prog=""
+    while IFS= read -r _line; do
+      [[ -z "$_line" ]] && continue
+      _k="${_line%%=*}"
+      _v="${_line#*=}"
+      case "$_k" in
+        pid) pid="$_v" ;;
+        service) svc="$_v" ;;
+        project_root) proot="$_v" ;;
+      esac
+    done <"$f"
+    if [[ -z "$pid" ]]; then
+      stale_count=$((stale_count + 1))
+      continue
+    fi
+    if ! run_pid_alive "$pid"; then
+      stale_count=$((stale_count + 1))
+      continue
+    fi
+    if ! run_pid_listens_on_port "$pid" "$port"; then
+      stale_count=$((stale_count + 1))
+      continue
+    fi
+    prog="$(run_pid_program_name "$pid" || true)"
+    [[ -n "$prog" ]] || prog="(unknown)"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$pid" "$prog" "$port" "${svc:--}" "${proot:--}" >>"$tmp"
+  done
+  shopt -u nullglob
+  printf '%-8s %-20s %-6s %-10s %s\n' "PID" "PROGRAM" "PORT" "SERVICE" "PROJECT"
+  printf '%-8s %-20s %-6s %-10s %s\n' "--------" "--------------------" "------" "----------" "-------"
+  if [[ -s "$tmp" ]]; then
+    sort -n -k1,1 "$tmp" | while IFS=$'\t' read -r pid prog port svc proot; do
+      printf '%-8s %-20s %-6s %-10s %s\n' "$pid" "$prog" "$port" "$svc" "$proot"
+    done
+  else
+    printf '%s\n' "(no running programs)"
+  fi
+  rm -f "$tmp"
+  RUN_LAST_STALE_COUNT="$stale_count"
+  export RUN_LAST_STALE_COUNT
+}
+
 run_local_status() {
   printf 'runctl status\n'
   printf '  %-10s %s\n' "project:" "$RUN_PROJECT_ROOT"

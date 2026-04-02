@@ -74,9 +74,11 @@ Usage: ./run.sh <command>
 
   (no args)      Same as doctor (elata-style default)
   ports          Registered ports (~/.run/ports)
+  ps             Running programs with ports/projects
   ports-gc       Drop stale registry entries
   status         This repo's .run state
   doctor         Run runctl doctor (from repo root; optional [dir])
+  test           Run repo tests
   release-check  Preflight: doctor + pnpm/npm pack --dry-run (no publish)
   lib-path       Print path to lib/run-lib.sh
   env-expand     Run env manifest expander (pass args after env-expand)
@@ -134,6 +136,9 @@ main() {
     ports)
       run_global_list_ports
       ;;
+    ps)
+      run_global_list_running
+      ;;
     ports-gc)
       run_global_gc
       ;;
@@ -145,6 +150,11 @@ main() {
       RUN_SH_TASK="doctor"
       export RUN_SH_TASK
       (cd "$ROOT" && exec ./bin/runctl doctor "$@")
+      ;;
+    test)
+      RUN_SH_TASK="test"
+      export RUN_SH_TASK
+      (cd "$ROOT" && exec pnpm test)
       ;;
     release-check)
       RUN_SH_TASK="release-check"

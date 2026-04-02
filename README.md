@@ -136,6 +136,7 @@ Add scripts to your `package.json`:
 | `runctl start` \| `runctl dev` | Start dev server (same command; picks free port, backgrounds) |
 | `runctl stop [dir]` | Stop daemons & release ports |
 | `runctl status [dir]` | Show `.run` state for this package |
+| `runctl ps` | List running programs with PID, port, service, project |
 | `runctl logs [dir] [service]` | Tail `.run/logs/<service>.log` (default service: `web`) |
 | `runctl ports` | List user-wide port registry (`~/.run`) |
 | `runctl ports gc` | Clean up stale port claims |

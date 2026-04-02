@@ -37,6 +37,7 @@
   ],
   "scripts": {
     "run": "bash ./run.sh",
+    "test": "bash ./tests/runctl-ps.test.sh",
     "doctor": "bash ./run.sh doctor",
     "release-check": "bash ./run.sh release-check",
     "promote": "bash ./run.sh promote",
