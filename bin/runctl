@@ -330,6 +330,19 @@ cmd_update() {
   pm="$(cmd_update_pick_pm "$PM")" || exit 1
   git_target="${GIT_BASE}#${GIT_REF}"
 
+  _remove_conflicting_global_runctl() {
+    # A legacy package named "runctl" can own the same binary name and shadow @zendero/runctl.
+    # Best-effort remove before reinstalling the intended package.
+    if [[ "$PKG" != "@zendero/runctl" ]]; then
+      return 0
+    fi
+    if [[ "$pm" == "pnpm" ]]; then
+      pnpm remove -g runctl >/dev/null 2>&1 || true
+    else
+      npm uninstall -g runctl >/dev/null 2>&1 || true
+    fi
+  }
+
   _git_base_for_ls_remote() {
     local base="$1"
     printf '%s' "${base#git+}"
@@ -349,6 +362,7 @@ cmd_update() {
   _update_registry() {
     local spec="${PKG}@latest"
     echo "runctl update: installing latest from registry ($spec)..."
+    _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
       pnpm add -g --force "$spec"
     else
@@ -366,6 +380,7 @@ cmd_update() {
       echo "runctl update: installing from Git ($git_target)..."
       echo "runctl update: could not resolve ref to SHA; proceeding with ref directly." >&2
     fi
+    _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
       pnpm add -g --force "$spec"
     else

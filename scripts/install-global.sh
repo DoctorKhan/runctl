@@ -132,10 +132,20 @@ run_install() {
   local source_kind="$2"
   local target="$3"
 
+  # A legacy package named "runctl" can shadow the same CLI binary.
+  # Remove it before installing @zendero/runctl.
+  if [[ "$PKG" == "@zendero/runctl" ]]; then
+    if [[ "$manager" == "pnpm" ]]; then
+      pnpm remove -g runctl >/dev/null 2>&1 || true
+    else
+      npm uninstall -g runctl >/dev/null 2>&1 || true
+    fi
+  fi
+
   if [[ "$manager" == "pnpm" ]]; then
-    pnpm add -g "$target"
+    pnpm add -g --force "$target"
   else
-    npm install -g "$target"
+    npm install -g --force "$target"
   fi
 
   say

@@ -102,6 +102,14 @@ Use npm explicitly (e.g. no pnpm on the machine):
 curl -fsSL "https://raw.githubusercontent.com/DoctorKhan/runctl/main/scripts/install-global.sh" | bash -s -- --pm npm --registry
 ```
 
+If `runctl --help` still looks old after install/update, remove the legacy package that can shadow this CLI and reinstall:
+
+```bash
+pnpm remove -g runctl
+pnpm add -g @zendero/runctl@latest
+hash -r
+```
+
 `--help` on the script prints the same usage summary.
 
 ---
