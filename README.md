@@ -110,7 +110,11 @@ pnpm add -g @zendero/runctl@latest
 hash -r
 ```
 
-`--help` on the script prints the same usage summary.
+### `runctl update` and pnpm version messages
+
+If pnpm nags about versions or **`pnpm self-update`** does nothing useful, **`runctl update --help`** explains why and lists concrete fixes (same text is summarized after a successful pnpm-based update unless **`CI`** or **`RUNCTL_UPDATE_SKIP_PNPM_HINT=1`**).
+
+`--help` on the install script prints the same usage summary.
 
 ---
 

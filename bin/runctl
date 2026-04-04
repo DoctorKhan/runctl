@@ -3,6 +3,71 @@
 set -euo pipefail
 RUNCTL_PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 
+# Volta resolves pnpm from the *current* project's packageManager for `pnpm -v`, but
+# `pnpm add -g` uses the default global pnpm (often older). Run pnpm as this package
+# defines it: Corepack reads packageManager from $RUNCTL_PKG_ROOT/package.json (no
+# duplicated version in shell). If Corepack is missing, fall back to npm exec with
+# the same field, then plain pnpm on PATH.
+_runctl_read_pnpm_version_from_package_json() {
+  node -e '
+    const fs = require("fs");
+    const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const pm = p.packageManager || "";
+    const m = /^pnpm@([0-9]+(?:\.[0-9]+){0,2})/.exec(pm);
+    process.stdout.write(m ? m[1] : "");
+  ' "$RUNCTL_PKG_ROOT/package.json" 2>/dev/null || true
+}
+
+# Shown after runctl update (pnpm) and in --help. pnpm often suggests "pnpm self-update" but that
+# updates a different notion of "current" than the pnpm used for global -g installs (Volta/Corepack).
+_runctl_print_pnpm_version_fixup_hint() {
+  local ver
+  ver="$(_runctl_read_pnpm_version_from_package_json)"
+  [[ -n "$ver" ]] || ver="X.Y.Z"
+  cat >&2 <<EOF
+
+runctl update: pnpm may show "Update available" or tell you to run pnpm self-update; self-update
+often does nothing useful here: it follows your project packageManager, while global installs use a
+separate default pnpm. If the footer still shows an older pnpm than you expect, fix that default — do
+not rely on pnpm self-update alone. Replace ${ver} with the version you want (match package.json).
+
+  volta install pnpm@${ver}
+  corepack enable && corepack prepare pnpm@${ver} --activate
+  RUNCTL_PNPM_VERSION=${ver} runctl update git
+  runctl update --pm npm
+
+Hide this hint: RUNCTL_UPDATE_SKIP_PNPM_HINT=1  (also suppressed when CI is set.)
+EOF
+}
+
+_runctl_maybe_print_pnpm_update_hint() {
+  local pm="$1"
+  [[ "$pm" == "pnpm" ]] || return 0
+  [[ -z "${RUNCTL_UPDATE_SKIP_PNPM_HINT:-}" ]] || return 0
+  [[ -z "${CI:-}" ]] || return 0
+  _runctl_print_pnpm_version_fixup_hint
+}
+
+_runctl_pnpm_exec() {
+  if command -v corepack >/dev/null 2>&1; then
+    if (cd "$RUNCTL_PKG_ROOT" && corepack pnpm "$@"); then
+      return 0
+    fi
+    echo "runctl update: warning: corepack pnpm failed; trying npm exec / PATH pnpm" >&2
+  fi
+  local ver="${RUNCTL_PNPM_VERSION:-}"
+  if [[ -z "$ver" ]]; then
+    ver="$(_runctl_read_pnpm_version_from_package_json)"
+  fi
+  if [[ -n "$ver" ]] && command -v npm >/dev/null 2>&1; then
+    if npm exec -y "pnpm@${ver}" -- "$@"; then
+      return 0
+    fi
+    echo "runctl update: warning: npm exec pnpm@${ver} failed; falling back to pnpm on PATH" >&2
+  fi
+  command pnpm "$@"
+}
+
 _b="" _d="" _r="" _c="" _y="" _g=""
 if [[ -t 1 ]]; then
   _b=$'\033[1m' _d=$'\033[2m' _r=$'\033[0m'
@@ -220,6 +285,22 @@ ${_y}Environment${_r} ${_d}(optional; same as install-global.sh)${_r}
   RUNCTL_PACKAGE   npm name ${_d}(default: @zendero/runctl)${_r}
   RUNCTL_GIT_BASE  Git URL without fragment ${_d}(default: git+https://github.com/DoctorKhan/runctl.git)${_r}
   RUNCTL_GIT_REF   default Git ref ${_d}(default: main)${_r}
+  RUNCTL_PNPM_VERSION  Force pnpm version for npm-exec fallback ${_d}(e.g. 10.33.0)${_r}
+  RUNCTL_UPDATE_SKIP_PNPM_HINT  Set to ${_c}1${_r} to hide the post-update pnpm version hint ${_d}(CI also hides)${_r}
+
+${_y}pnpm version / “pnpm self-update” does nothing${_r}
+  pnpm often prints an upgrade banner or suggests ${_c}pnpm self-update${_r}. That advice targets the
+  project ${_c}packageManager${_r} pin; ${_c}pnpm add -g${_r} uses a ${_b}different${_r} default pnpm
+  (e.g. Volta’s global toolchain). So self-update may say you are already on 10.33.0 while the footer
+  still shows 10.27.0 — both can be “true.” Fix the ${_b}global${_r} default, not self-update alone:
+
+  ${_c}volta install pnpm@<version>${_r}   ${_d}match your repo / Volta default${_r}
+  ${_c}corepack enable && corepack prepare pnpm@<version> --activate${_r}
+  ${_c}RUNCTL_PNPM_VERSION=<version> runctl update git${_r}
+  ${_c}runctl update --pm npm${_r}   ${_d}use npm for this install instead${_r}
+
+  A short hint is printed after a successful ${_c}runctl update${_r} with pnpm unless ${_c}CI${_r} is set
+  or ${_c}RUNCTL_UPDATE_SKIP_PNPM_HINT=1${_r}.
 EOF
 }
 
@@ -345,7 +426,7 @@ cmd_update() {
       return 0
     fi
     if [[ "$pm" == "pnpm" ]]; then
-      pnpm remove -g runctl >/dev/null 2>&1 || true
+      _runctl_pnpm_exec remove -g runctl >/dev/null 2>&1 || true
     else
       npm uninstall -g runctl >/dev/null 2>&1 || true
     fi
@@ -372,7 +453,7 @@ cmd_update() {
     echo "runctl update: installing latest from registry ($spec)..."
     _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
-      pnpm add -g --force "$spec"
+      _runctl_pnpm_exec add -g --force "$spec"
     else
       npm install -g --force "$spec"
     fi
@@ -390,7 +471,7 @@ cmd_update() {
     fi
     _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
-      pnpm add -g --force "$spec"
+      _runctl_pnpm_exec add -g --force "$spec"
     else
       npm install -g --force "$spec"
     fi
@@ -404,17 +485,18 @@ cmd_update() {
       _update_git
       ;;
     auto)
-      if _update_registry; then
-        return 0
+      if ! _update_registry; then
+        echo "runctl update: registry install failed; trying Git..." >&2
+        _update_git
       fi
-      echo "runctl update: registry install failed; trying Git..." >&2
-      _update_git
       ;;
     *)
       echo "runctl update: internal error: unknown mode $MODE" >&2
       exit 1
       ;;
   esac
+
+  _runctl_maybe_print_pnpm_update_hint "$pm"
 }
 
 cmd_doctor() {
