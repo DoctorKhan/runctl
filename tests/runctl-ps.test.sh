@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-
+# Tests for run_global_list_running, gc, and runctl ps (CLI integration).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/test-runner.sh
+source "$ROOT/tests/lib/test-runner.sh"
 # shellcheck source=../lib/run-lib.sh
 source "$ROOT/lib/run-lib.sh"
 
@@ -17,33 +19,6 @@ cleanup() {
   rm -rf "$TEST_TMP_ROOT"
 }
 trap cleanup EXIT
-
-fail() {
-  echo "FAIL: $*" >&2
-  exit 1
-}
-
-assert_contains() {
-  local haystack="$1"
-  local needle="$2"
-  if [[ "$haystack" != *"$needle"* ]]; then
-    fail "expected output to contain: $needle"
-  fi
-}
-
-assert_not_contains() {
-  local haystack="$1"
-  local needle="$2"
-  if [[ "$haystack" == *"$needle"* ]]; then
-    fail "expected output to NOT contain: $needle"
-  fi
-}
-
-assert_equals() {
-  local got="$1"
-  local want="$2"
-  [[ "$got" == "$want" ]] || fail "expected [$want], got [$got]"
-}
 
 register_pid() {
   local pid="$1"
@@ -61,6 +36,16 @@ start_node_listener() {
   ' "$port" >/dev/null 2>&1 &
   local pid=$!
   sleep 0.2
+  if command -v lsof >/dev/null 2>&1; then
+    local lip=""
+    local n=0
+    while [[ -z "$lip" && "$n" -lt 50 ]]; do
+      lip="$(lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1{print $2; exit}')"
+      sleep 0.1
+      n=$((n + 1))
+    done
+    [[ -n "$lip" ]] && pid="$lip"
+  fi
   register_pid "$pid"
   printf '%s\n' "$pid"
 }
@@ -104,7 +89,9 @@ run_and_capture_list_running() {
   rm -f "$out_file"
 }
 
-test_list_running_header_and_empty_state() {
+# --- run_global_list_running ---
+
+test_list_running_shows_header_and_empty_state() {
   local state="$TEST_TMP_ROOT/empty-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -116,7 +103,7 @@ test_list_running_header_and_empty_state() {
   assert_equals "$CAPTURED_STALE" "0"
 }
 
-test_list_running_counts_missing_pid_as_stale() {
+test_list_running_counts_registry_rows_with_missing_pid_as_stale() {
   local state="$TEST_TMP_ROOT/missing-pid-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -127,7 +114,7 @@ test_list_running_counts_missing_pid_as_stale() {
   assert_equals "$CAPTURED_STALE" "1"
 }
 
-test_list_running_ignores_invalid_port_filenames() {
+test_list_running_skips_non_numeric_port_files() {
   local state="$TEST_TMP_ROOT/invalid-port-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -144,7 +131,7 @@ EOF
   assert_equals "$CAPTURED_STALE" "0"
 }
 
-test_list_running_counts_stale_and_lists_alive() {
+test_list_running_lists_alive_rows_and_increments_stale_for_dead() {
   local state="$TEST_TMP_ROOT/lib-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -182,7 +169,7 @@ test_list_running_counts_stale_and_lists_alive() {
   assert_equals "$stale" "1"
 }
 
-test_list_running_marks_wrong_listener_as_stale() {
+test_list_running_marks_pid_not_listening_on_port_as_stale() {
   local state="$TEST_TMP_ROOT/wrong-listener-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -191,14 +178,12 @@ test_list_running_marks_wrong_listener_as_stale() {
   listener_port="$(alloc_test_port)"
   alive_pid="$(start_node_listener "$listener_port")"
   write_registry_entry "$state" "4042" "/tmp/project-mismatch" "web" "$alive_pid"
-  local out
   run_and_capture_list_running
-  out="$CAPTURED_OUTPUT"
-  assert_contains "$out" "(no running programs)"
+  assert_contains "$CAPTURED_OUTPUT" "(no running programs)"
   assert_equals "$CAPTURED_STALE" "1"
 }
 
-test_list_running_uses_unknown_program_fallback() {
+test_list_running_falls_back_to_unknown_when_ps_comm_missing() {
   local state="$TEST_TMP_ROOT/unknown-program-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -215,7 +200,9 @@ test_list_running_uses_unknown_program_fallback() {
   assert_contains "$out" "(unknown)"
 }
 
-test_global_gc_removes_stale_entries() {
+# --- run_global_gc ---
+
+test_global_gc_drops_stale_but_keeps_live_registry_files() {
   local state="$TEST_TMP_ROOT/gc-state"
   mkdir -p "$state/ports"
   RUN_GLOBAL_STATE="$state"
@@ -230,7 +217,9 @@ test_global_gc_removes_stale_entries() {
   [[ ! -f "$state/ports/4062" ]] || fail "expected stale entry to be removed"
 }
 
-test_runctl_ps_triggers_gc_and_refreshes() {
+# --- runctl ps (CLI) ---
+
+test_runctl_ps_triggers_gc_and_second_pass() {
   local state="$TEST_TMP_ROOT/cli-state"
   mkdir -p "$state/ports"
 
@@ -249,10 +238,10 @@ EOF
   out="$(RUN_GLOBAL_STATE="$state" "$ROOT/bin/runctl" ps)"
   assert_contains "$out" "found 1 stale registry entry; cleaning..."
   assert_contains "$out" "refreshed"
-  [[ ! -f "$state/ports/3010" ]] || fail "expected stale entry to be removed by gc"
+  [[ ! -f "$state/ports/3010" ]] || fail "stale port file should be removed by gc"
 }
 
-test_runctl_ps_plural_cleanup_message() {
+test_runctl_ps_pluralizes_stale_message() {
   local state="$TEST_TMP_ROOT/cli-state-plural"
   mkdir -p "$state/ports"
   write_registry_entry "$state" "3110" "/tmp/project-dead-a" "web" "999991"
@@ -260,11 +249,11 @@ test_runctl_ps_plural_cleanup_message() {
   local out
   out="$(RUN_GLOBAL_STATE="$state" "$ROOT/bin/runctl" ps)"
   assert_contains "$out" "found 2 stale registry entries; cleaning..."
-  [[ ! -f "$state/ports/3110" ]] || fail "expected stale entry A removed"
-  [[ ! -f "$state/ports/3111" ]] || fail "expected stale entry B removed"
+  [[ ! -f "$state/ports/3110" ]] || fail "stale entry A should be removed"
+  [[ ! -f "$state/ports/3111" ]] || fail "stale entry B should be removed"
 }
 
-test_runctl_ps_without_stale_does_not_refresh() {
+test_runctl_ps_skips_refresh_when_nothing_is_stale() {
   local state="$TEST_TMP_ROOT/cli-state-no-stale"
   mkdir -p "$state/ports"
 
@@ -287,17 +276,25 @@ EOF
 }
 
 main() {
-  test_list_running_header_and_empty_state
-  test_list_running_counts_missing_pid_as_stale
-  test_list_running_ignores_invalid_port_filenames
-  test_list_running_counts_stale_and_lists_alive
-  test_list_running_marks_wrong_listener_as_stale
-  test_list_running_uses_unknown_program_fallback
-  test_global_gc_removes_stale_entries
-  test_runctl_ps_triggers_gc_and_refreshes
-  test_runctl_ps_plural_cleanup_message
-  test_runctl_ps_without_stale_does_not_refresh
-  echo "runctl ps tests: 10 passed"
+  runner_init "tests/runctl-ps.test.sh"
+
+  runner_suite "run_global_list_running"
+  runner_it "prints table header and (no running programs) for an empty registry" test_list_running_shows_header_and_empty_state
+  runner_it "counts rows with missing pid as stale" test_list_running_counts_registry_rows_with_missing_pid_as_stale
+  runner_it "ignores files under ports/ that are not numeric port names" test_list_running_skips_non_numeric_port_files
+  runner_it "lists alive processes and excludes stale pids from output" test_list_running_lists_alive_rows_and_increments_stale_for_dead
+  runner_it "treats pid that does not listen on the registered port as stale" test_list_running_marks_pid_not_listening_on_port_as_stale
+  runner_it "uses (unknown) when the process name cannot be resolved" test_list_running_falls_back_to_unknown_when_ps_comm_missing
+
+  runner_suite "run_global_gc"
+  runner_it "removes dead registry files but keeps entries for live listeners" test_global_gc_drops_stale_but_keeps_live_registry_files
+
+  runner_suite "runctl ps"
+  runner_it "runs gc when stale rows exist, then re-lists (refresh)" test_runctl_ps_triggers_gc_and_second_pass
+  runner_it "prints plural copy when multiple stale rows are cleaned" test_runctl_ps_pluralizes_stale_message
+  runner_it "does not print cleaning when all registry rows are live" test_runctl_ps_skips_refresh_when_nothing_is_stale
+
+  runner_summary
 }
 
 main "$@"

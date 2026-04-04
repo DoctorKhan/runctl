@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Optional shell entrypoint — most projects only need package.json scripts.
 # Prerequisite: pnpm add -D @zendero/runctl   (Node >= 18)
+#
+# When to use this vs the runctl CLI:
+#   - Prefer `runctl start` / package.json scripts (see README) for normal dev.
+#   - Source lib/run-lib.sh (this file) for advanced shell integration: custom
+#     wrappers, CI, or repos that already drive everything through ./run.sh.
+#   Shipped path: package `lib/run-lib.sh` (see `runctl lib-path`).
 
 set -euo pipefail
 

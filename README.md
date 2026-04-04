@@ -135,23 +135,37 @@ Add scripts to your `package.json`:
 
 **`predev`:** If you define `predev` next to `dev` (e.g. a doctor step) and your script name is `dev:*` or `dev_*` without its own `pre<script>`, runctl runs `predev` once before starting. Set `RUNCTL_SKIP_PREDEV=1` to skip.
 
+**Dashboard / API-only (split names):** Avoid `runctl start --script dev` when `dev` is the runctl wrapper — that loops. Use a dedicated script for the real server:
+
+```json
+{
+  "scripts": {
+    "dev": "runctl start --script dev:workbench",
+    "dev:workbench": "node --env-file=.env src/dashboard/server.js",
+    "dev:stop": "runctl stop"
+  }
+}
+```
+
+Listen on `process.env.PORT` (runctl sets it). Optional: `runctl start --script dev:workbench --open` to open the browser after start, or `runctl start … && runctl open .`.
+
 ---
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `runctl start` \| `runctl dev` | Start dev server (same command; picks free port, backgrounds) |
+| `runctl start` \| `runctl dev` | Start dev server (same command; picks free port, backgrounds). Flags: `--script`, `--open` (open browser after a successful start) |
 | `runctl stop [dir]` | Stop daemons & release ports |
 | `runctl status [dir]` | Show `.run` state for this package |
 | `runctl ps` | List running programs with PID, port, service, project |
-| `runctl logs [dir] [service]` | Tail `.run/logs/<service>.log` (default service: `web`) |
+| `runctl logs [dir] [service]` | Tail `.run/logs/<service>.log` (default service: **`RUNCTL_SERVICE`**, else `package.json` `name` basename, else `web`) |
 | `runctl ports` | List user-wide port registry (`~/.run`) |
 | `runctl ports gc` | Clean up stale port claims |
 | `runctl env expand <manifest> [--out file]` | Generate `.env.local` from manifest |
-| `runctl doctor [dir]` | Check Node 18+, `lsof`, package manager, `package.json` |
+| `runctl doctor [dir]` | Check Node 18+, `lsof`, package manager, `package.json`; reminds that child scripts get **`PORT`** / **`HOST`** (custom servers should `listen` on `process.env.PORT`) |
 | `runctl update` | Refresh global CLI: default **`auto`** (npm `@latest`, then Git). **`runctl update npm`** / **`git`** / **`auto`** or flags **`--registry`** / **`--git`** / **`--auto`**; **`runctl update --help`**; env `RUNCTL_PACKAGE`, `RUNCTL_GIT_BASE`, `RUNCTL_GIT_REF` (aligned with [`install-global.sh`](scripts/install-global.sh)) |
-| `runctl version` | Print package version and install path |
+| `runctl version` \| `runctl --version` \| `runctl -v` | Print package version and install path (supported interchangeably) |
 
 **Monorepo:** `runctl start ./apps/web --script dev:server`
 
@@ -168,7 +182,7 @@ Add scripts to your `package.json`:
 | **`predev`** + split `dev` / `dev:server` | **Supported** — see above. |
 | Monorepo app in a subfolder | Use `runctl start ./apps/web`. |
 | **No `package.json`** (Python, Go, etc.) | **Not a fit** — this tool is for Node package scripts. |
-| Custom Node entry (gateways, CLIs) | **Weak fit** — `PORT`/`HOST` are set, but no framework CLI flags. |
+| Custom Node entry (gateways, CLIs) | **Weak fit** — `PORT`/`HOST` are injected; bind with `server.listen(process.env.PORT)` (see `runctl doctor`). |
 
 ---
 
@@ -176,7 +190,13 @@ Add scripts to your `package.json`:
 
 [`examples/consumer-package.json`](examples/consumer-package.json) · [`docs/vercel-and-env.md`](docs/vercel-and-env.md) · [`examples/env.manifest.example`](examples/env.manifest.example)
 
-**Develop this repo:** `pnpm install` → `./run.sh` (default **doctor**, like `elata-bio-sdk/run.sh`) → `./run.sh ports`
+**CLI vs `run-lib.sh`:** Most apps only need the **`runctl`** binary and `package.json` scripts. For shell-heavy repos, [`examples/run.sh.example`](examples/run.sh.example) shows sourcing **`lib/run-lib.sh`** (same library the CLI uses). Resolve the installed path with **`runctl lib-path`**.
+
+**CI:** Prefer **`pnpm add -D @zendero/runctl`** (or a global install) so `runctl` is on `PATH` with a stable version. **`pnpm dlx @zendero/runctl`** is fine for one-off recovery; avoid relying on it for every CI job (cold cache / latency).
+
+**Roadmap (ideas):** `runctl exec` (one-off commands with the same port / `.run` contract as `start`); optional HTTP health gate before “ready”.
+
+**Develop this repo:** `pnpm install` → `./run.sh` (default **doctor**, like `elata-bio-sdk/run.sh`) → `./run.sh ports` · **`pnpm test`** runs [`tests/run-all.sh`](tests/run-all.sh) (Jest-style output: suites, ✓/✗, `PASS`/`FAIL` per file, shared helpers in [`tests/lib/test-runner.sh`](tests/lib/test-runner.sh))
 
 **Publish (maintainers)** — workflow similar to elata’s release preflight, scaled for one package:
 

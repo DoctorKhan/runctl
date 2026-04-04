@@ -16,12 +16,12 @@ ${_b}runctl${_r} — dev-server orchestrator & port manager
 ${_y}Usage:${_r}  runctl <command> [options]
 
 ${_y}Commands${_r}
-  ${_c}start${_r} | ${_c}dev${_r} [dir] [--script name]  Start dev server ${_d}(alias: dev = start)${_r}
+  ${_c}start${_r} | ${_c}dev${_r} [dir] [--script name] [--open]  Start dev server ${_d}(alias: dev = start; ${_c}--open${_r} = browser after start)${_r}
   ${_c}open${_r}  [dir]                   Open running dev server in browser
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
   ${_c}ps${_r}                            List running programs with ports/projects
-  ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default service: web)${_r}
+  ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default: ${_c}RUNCTL_SERVICE${_r} or package name, else web)${_r}
   ${_c}ports${_r}                         List user-wide port registry (~/.run)
   ${_c}ports gc${_r}                      Clean up stale port claims
   ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
@@ -30,6 +30,8 @@ ${_y}Commands${_r}
 
 ${_y}Options${_r}
   ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
+  ${_c}--open${_r}                        After a successful start, open the app URL ${_d}(same as ${_c}runctl open${_r})${_r}
+  ${_c}version${_r} | ${_c}--version${_r} | ${_c}-v${_r}     Print version and install path
   ${_c}--help${_r}, ${_c}-h${_r}                     Show this help
 
 ${_d}Quick start — add to package.json:
@@ -48,12 +50,13 @@ _resolve_proj() {
 }
 
 cmd_start() {
-  local proj script="" args=()
+  local proj script="" args=() open_after=0
   proj="$(pwd)"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --script) script="${2:-}"; shift 2 ;;
+      --open) open_after=1; shift ;;
       --) shift; args+=("$@"); break ;;
       -h | --help) usage; exit 0 ;;
       -*)
@@ -77,7 +80,12 @@ cmd_start() {
   # shellcheck source=../lib/run-lib.sh
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
   run_project_init "$proj"
-  run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}"
+  if ! run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}"; then
+    return 1
+  fi
+  if [[ "$open_after" -eq 1 ]]; then
+    cmd_open "$proj"
+  fi
 }
 
 cmd_open() {
@@ -442,6 +450,7 @@ cmd_doctor() {
     printf '  %-12s %s\n' "package.json:" "not found in $proj" >&2
     ec=1
   fi
+  printf '  %-12s %s\n' "child env:" "PORT and HOST are set for package scripts; custom Node servers should listen on process.env.PORT (and bind HOST if needed)."
   return "$ec"
 }
 
@@ -456,7 +465,8 @@ cmd_logs() {
         shift 2
         ;;
       -h | --help)
-        echo "Usage: runctl logs [dir] [service]  (default service: web)" >&2
+        echo "Usage: runctl logs [dir] [service]" >&2
+        echo "       Default service: RUNCTL_SERVICE, else package.json name, else web." >&2
         echo "       runctl logs [--lines N]" >&2
         exit 0
         ;;
@@ -470,10 +480,13 @@ cmd_logs() {
     proj="$(cd "${pos[0]}" && pwd)"
     pos=("${pos[@]:1}")
   fi
-  local svc="${pos[0]:-web}"
+  local svc="${pos[0]:-}"
   # shellcheck source=../lib/run-lib.sh
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
   run_project_init "$proj"
+  if [[ -z "$svc" ]]; then
+    svc="$(run_default_service_name)"
+  fi
   local logf="$RUN_LOCAL_STATE/logs/${svc}.log"
   if [[ ! -f "$logf" ]]; then
     echo "runctl logs: no file at $logf" >&2
@@ -515,7 +528,7 @@ main() {
 
     # Plumbing
     lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;
-    version | -v) cmd_version_print ;;
+    version | -v | --version) cmd_version_print ;;
     help | -h | --help) usage ;;
 
     # Hidden backward-compat aliases

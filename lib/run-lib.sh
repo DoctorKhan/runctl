@@ -2,6 +2,7 @@
 # run-lib.sh — npm package `@zendero/runctl`: project .run/ + user ~/.run registry.
 # Requires bash. Port/dev automation requires Node.js >= 18 (see package.json engines).
 # Intentionally no global `set -e` — this file is usually sourced.
+# Consumer shell example: examples/run.sh.example (most projects use the `runctl` CLI instead).
 
 if [[ -z "${BASH_VERSION:-}" ]]; then
   echo "run-lib.sh: must be sourced or executed with bash (not zsh)" >&2
@@ -146,6 +147,50 @@ run_require_node() {
   }
 }
 
+# Basename for .run/logs/<name>.log and RUN_DEV_SERVICE — override with RUNCTL_SERVICE.
+run_sanitize_service_name() {
+  local s="${1:-web}"
+  s="${s//[^a-zA-Z0-9._-]/-}"
+  s="$(printf '%s' "$s" | sed 's/^-*//;s/-*$//')"
+  [[ -z "$s" ]] && s="web"
+  printf '%s\n' "$s"
+}
+
+run_default_service_name() {
+  if [[ -n "${RUNCTL_SERVICE:-}" ]]; then
+    run_sanitize_service_name "${RUNCTL_SERVICE}"
+    return 0
+  fi
+  [[ -f "$RUN_PROJECT_ROOT/package.json" ]] || {
+    printf '%s\n' web
+    return 0
+  }
+  command -v node >/dev/null 2>&1 || {
+    printf '%s\n' web
+    return 0
+  }
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const root = process.argv[1];
+    let pkg = {};
+    try {
+      pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    } catch {
+      process.stdout.write("web" + "\n");
+      process.exit(0);
+    }
+    const n = pkg.name;
+    if (typeof n !== "string" || !n) {
+      process.stdout.write("web" + "\n");
+      process.exit(0);
+    }
+    const base = n.includes("/") ? n.split("/").pop() : n;
+    const safe = String(base).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "web";
+    process.stdout.write(safe + "\n");
+  ' "$RUN_PROJECT_ROOT" 2>/dev/null || printf '%s\n' web
+}
+
 # True if package.json defines scripts.<name> (Node required).
 run_package_has_script() {
   local name="$1"
@@ -242,14 +287,16 @@ EOF
 
 # Start \`pnpm|yarn|npm run <script>\` in the background with a free port and register it.
 # Script name defaults to \`dev\`; set RUNCTL_PM_RUN_SCRIPT (e.g. dev:server) when \`dev\` is the runctl wrapper.
-# Usage: run_start_package_dev [service_name=web] [base_port|auto=auto] [extra args after script --]
+# Default service name: RUNCTL_SERVICE, else package.json name (basename), else web — see run_default_service_name.
+# Usage: run_start_package_dev [service_name] [base_port|auto=auto] [extra args after script --]
 run_start_package_dev() {
   run_require_node || return 1
   [[ -f "$RUN_PROJECT_ROOT/package.json" ]] || {
     echo "run_start_package_dev: no package.json in $RUN_PROJECT_ROOT" >&2
     return 1
   }
-  local svc="web"
+  local svc
+  svc="$(run_default_service_name)"
   local base_raw="auto"
   if [[ $# -ge 1 ]]; then svc="$1"; shift; fi
   if [[ $# -ge 1 ]]; then base_raw="$1"; shift; fi
