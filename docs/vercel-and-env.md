@@ -13,7 +13,7 @@ Keep a **manifest** (not loaded directly by Next/Vite) that lists each real valu
 
 ```bash
 pnpm exec runctl env expand env.manifest --out .env.local
-# or: node node_modules/@zendero/runctl/scripts/expand-env-manifest.mjs env.manifest --out .env.local
+# or: runctl env expand env.manifest --out .env.local
 ```
 
 Add **`.env.local`** (and optionally `.env.manifest` if it contains no secrets—usually it *does*, so keep the manifest **gitignored** or use a **`.env.manifest.example`** without real values).
@@ -81,6 +81,6 @@ Sometimes two env vars exist for historical reasons. If both client and server c
 
 | Goal | Approach |
 |------|-----------|
-| Same value, many names **locally** | `env.manifest` + `expand-env-manifest.mjs` → `.env.local` |
+| Same value, many names **locally** | `env.manifest` + `runctl env expand` → `.env.local` |
 | Match Vercel → laptop | `vercel env pull` + merge with generated `.env.local` |
 | Same value, many names **on Vercel** | Duplicate in UI, or scripted `vercel env add`, or a secrets manager with Vercel sync |

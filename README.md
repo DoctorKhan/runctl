@@ -200,7 +200,7 @@ Listen on `process.env.PORT` (runctl sets it). Optional: `runctl start --script 
 
 **Roadmap (ideas):** `runctl exec` (one-off commands with the same port / `.run` contract as `start`); optional HTTP health gate before “ready”.
 
-**Develop this repo:** `pnpm install` → `./run.sh` (default **doctor**, like `elata-bio-sdk/run.sh`) → `./run.sh ports` · **`pnpm test`** runs [`tests/run-all.sh`](tests/run-all.sh) (Jest-style output: suites, ✓/✗, `PASS`/`FAIL` per file, shared helpers in [`tests/lib/test-runner.sh`](tests/lib/test-runner.sh))
+**Develop this repo:** `pnpm install` → `./run.sh` (thin runner; default **help**) delegates to **`bin/runctl`**. Maintainer npm flows live in [`scripts/maintain.sh`](scripts/maintain.sh). **`pnpm test`** runs [`tests/run-all.sh`](tests/run-all.sh) (Jest-style output: suites, ✓/✗, `PASS`/`FAIL` per file, shared helpers in [`tests/lib/test-runner.sh`](tests/lib/test-runner.sh))
 
 **Publish (maintainers)** — workflow similar to elata’s release preflight, scaled for one package:
 

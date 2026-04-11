@@ -2,6 +2,11 @@
 # Runctl CLI — installed via pnpm/npm (devDependency .bin or global).
 set -euo pipefail
 RUNCTL_PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+# Load optional repo .env / npm token (consumer project: set RUNCTL_PROJECT_ROOT or run from repo root).
+# shellcheck source=../lib/repo-env.sh
+source "$RUNCTL_PKG_ROOT/lib/repo-env.sh"
+runctl_load_repo_env "${RUNCTL_PROJECT_ROOT:-$PWD}"
+
 
 # Volta resolves pnpm from the *current* project's packageManager for `pnpm -v`, but
 # `pnpm add -g` uses the default global pnpm (often older). Run pnpm as this package
@@ -92,10 +97,15 @@ ${_y}Commands${_r}
   ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
   ${_c}doctor${_r}                        Check Node, tooling, and project basics
   ${_c}update${_r} [npm|git|auto] [opts]  Update global runctl ${_d}(default: auto; see runctl update --help)${_r}
+  ${_c}install${_r} [args]               Install dependencies ${_d}(pnpm preferred; npm fallback when PM=pnpm)${_r}
+  ${_c}run${_r} <script> [args]          ${_d}package manager run (PM env, default pnpm)${_r}
+  ${_c}exec${_r} [args]                  ${_d}package manager exec${_r}
+  ${_c}test${_r} [args]                  ${_d}package manager test${_r}
 
 ${_y}Options${_r}
   ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
   ${_c}--open${_r}                        After a successful start, open the app URL ${_d}(same as ${_c}runctl open${_r})${_r}
+  ${_c}RUNCTL_PROJECT_ROOT${_r}           Repo root for .env + install/run/test ${_d}(default: cwd)${_r}
   ${_c}version${_r} | ${_c}--version${_r} | ${_c}-v${_r}     Print version and install path
   ${_c}--help${_r}, ${_c}-h${_r}                     Show this help
 
@@ -582,6 +592,62 @@ cmd_logs() {
   tail -n "$lines" "$logf"
 }
 
+_runctl_pm() {
+  printf '%s' "${PM:-pnpm}"
+}
+
+cmd_install() {
+  local root="${RUNCTL_PROJECT_ROOT:-$PWD}"
+  if [[ "$(_runctl_pm)" == "pnpm" ]]; then
+    if command -v pnpm >/dev/null 2>&1; then
+      (cd "$root" && exec pnpm install "$@")
+    elif command -v npm >/dev/null 2>&1; then
+      echo "runctl install: pnpm not found; using npm" >&2
+      (cd "$root" && exec npm install "$@")
+    else
+      echo "runctl install: install pnpm (preferred) or npm" >&2
+      exit 1
+    fi
+  else
+    local pm="$(_runctl_pm)"
+    command -v "$pm" >/dev/null 2>&1 || {
+      echo "runctl install: $pm not on PATH" >&2
+      exit 1
+    }
+    (cd "$root" && exec "$pm" install "$@")
+  fi
+}
+
+cmd_run() {
+  local root="${RUNCTL_PROJECT_ROOT:-$PWD}"
+  local pm="$(_runctl_pm)"
+  command -v "$pm" >/dev/null 2>&1 || {
+    echo "runctl run: $pm not on PATH (set PM=…)" >&2
+    exit 1
+  }
+  (cd "$root" && exec "$pm" run "$@")
+}
+
+cmd_exec() {
+  local root="${RUNCTL_PROJECT_ROOT:-$PWD}"
+  local pm="$(_runctl_pm)"
+  command -v "$pm" >/dev/null 2>&1 || {
+    echo "runctl exec: $pm not on PATH (set PM=…)" >&2
+    exit 1
+  }
+  (cd "$root" && exec "$pm" exec "$@")
+}
+
+cmd_test() {
+  local root="${RUNCTL_PROJECT_ROOT:-$PWD}"
+  local pm="$(_runctl_pm)"
+  command -v "$pm" >/dev/null 2>&1 || {
+    echo "runctl test: $pm not on PATH (set PM=…)" >&2
+    exit 1
+  }
+  (cd "$root" && exec "$pm" test "$@")
+}
+
 cmd_version_print() {
   local ver="?"
   if command -v node >/dev/null 2>&1; then
@@ -607,6 +673,10 @@ main() {
     env)      cmd_env "$@" ;;
     doctor)   cmd_doctor "$@" ;;
     update)   cmd_update "$@" ;;
+    install)  cmd_install "$@" ;;
+    run)      cmd_run "$@" ;;
+    exec)     cmd_exec "$@" ;;
+    test)     cmd_test "$@" ;;
 
     # Plumbing
     lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;
