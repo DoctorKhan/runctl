@@ -1,82 +1,91 @@
 #!/usr/bin/env bash
-# Optional shell entrypoint — most projects only need package.json scripts.
-# Prerequisite: pnpm add -D @zendero/runctl   (Node >= 18)
-#
-# When to use this vs the runctl CLI:
-#   - Prefer `runctl start` / package.json scripts (see README) for normal dev.
-#   - Source lib/run-lib.sh (this file) for advanced shell integration: custom
-#     wrappers, CI, or repos that already drive everything through ./run.sh.
-#   Shipped path: package `lib/run-lib.sh` (see `runctl lib-path`).
-
+# Thin project runner: sets RUNCTL_PROJECT_ROOT + PM/PORT, then delegates to bin/runctl.
+# Maintainer npm flows: scripts/maintain.sh
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+export RUNCTL_PROJECT_ROOT="$ROOT"
+export RUNCTL_PKG_ROOT="$ROOT"
+export RUN_SH_TASK="${RUN_SH_TASK:-}"
 
-if [[ -z "${RUN_LIB:-}" ]]; then
-  _rp="${RUNCTL_PACKAGE:-@zendero/runctl}"
-  RUN_LIB="$(
-    cd "$ROOT" && RUNCTL_PACKAGE="$_rp" node -e "
-      const p = require('path');
-      const n = process.env.RUNCTL_PACKAGE;
-      console.log(p.join(p.dirname(require.resolve(n + '/package.json')), 'lib', 'run-lib.sh'));
-    "
-  )" || {
-    echo "run.sh: add runctl — pnpm add -D ${_rp}" >&2
-    exit 1
-  }
-fi
-[[ -f "$RUN_LIB" ]] || {
-  echo "run.sh: RUN_LIB missing: $RUN_LIB" >&2
+PM="${PM:-pnpm}"
+export PM
+RUNCTL_DEV_SCRIPT="${RUNCTL_DEV_SCRIPT:-dev}"
+PORT="${PORT:-3000}"
+
+die() {
+  echo "run.sh${RUN_SH_TASK:+ ($RUN_SH_TASK)}: $*" >&2
   exit 1
 }
-# shellcheck source=/dev/null
-source "$RUN_LIB"
-run_project_init "$ROOT"
+
+runctl_cmd() {
+  if [[ -x "$ROOT/bin/runctl" ]]; then
+    exec "$ROOT/bin/runctl" "$@"
+  elif [[ -x "$ROOT/node_modules/.bin/runctl" ]]; then
+    exec "$ROOT/node_modules/.bin/runctl" "$@"
+  elif command -v pnpm >/dev/null 2>&1 && pnpm exec runctl version >/dev/null 2>&1; then
+    exec pnpm exec runctl "$@"
+  elif command -v runctl >/dev/null 2>&1; then
+    exec runctl "$@"
+  else
+    die "runctl not found — install deps or add @zendero/runctl"
+  fi
+}
 
 usage() {
   cat <<'EOF'
-Usage: ./run.sh <command>
+Usage: ./run.sh <command> [args]
 
-  dev [name] [auto|PORT] [-- extra args]
-  stop              Stop daemons + release port claims
-  status            Local .run state + ports.env
-  install           pnpm install
+  install | run | exec | test   → runctl (same as: runctl install|run|exec|test)
+  dev | start                   → runctl start this repo (--script RUNCTL_DEV_SCRIPT)
+  open | stop | status | doctor | ports | ps | logs | env | update | …
+  env-expand | lib-path
+  release-check | publish | release | promote | npm-whoami → scripts/maintain.sh
 
-Examples:
-  ./run.sh dev
-  ./run.sh dev web auto -- --turbo
+Environment:
+  RUNCTL_PROJECT_ROOT  Set automatically to this script’s directory
+  RUNCTL_DEV_SCRIPT    npm script for dev/start (default: dev)
+  PORT                 Passed to dev/start
+  PM                   package manager (default: pnpm)
 EOF
+  echo ""
+  runctl_cmd help
 }
 
-cmd="${1:-dev}"
-shift || true
+main() {
+  [[ $# -eq 0 ]] && set -- help
+  local cmd="${1:-}"
+  shift || true
 
-case "$cmd" in
-  dev)
-    run_with_lock run_start_package_dev "$@"
-    ;;
-  stop)
-    run_stop_all
-    ;;
-  status)
-    run_local_status
-    ;;
-  install)
-    if command -v pnpm >/dev/null 2>&1; then
-      (cd "$ROOT" && pnpm install)
-    elif command -v npm >/dev/null 2>&1; then
-      (cd "$ROOT" && npm install)
-    else
-      echo "Install pnpm or npm" >&2
-      exit 1
-    fi
-    ;;
-  help | -h | --help)
-    usage
-    ;;
-  *)
-    usage
-    exit 1
-    ;;
-esac
+  case "$cmd" in
+    install | run | exec | test)
+      RUN_SH_TASK="$cmd"
+      export RUN_SH_TASK
+      runctl_cmd "$cmd" "$@"
+      ;;
+    dev | start)
+      export PORT
+      runctl_cmd start "$ROOT" --script "$RUNCTL_DEV_SCRIPT" "$@"
+      ;;
+    release-check | publish | release | promote | npm-whoami)
+      exec "$ROOT/scripts/maintain.sh" "$cmd" "$@"
+      ;;
+    ports-gc | gc)
+      runctl_cmd ports gc "$@"
+      ;;
+    lib-path)
+      runctl_cmd lib-path
+      ;;
+    env-expand | expand-env)
+      runctl_cmd env expand "$@"
+      ;;
+    help | -h | --help)
+      usage
+      ;;
+    *)
+      runctl_cmd "$cmd" "$@"
+      ;;
+  esac
+}
+
+main "$@"

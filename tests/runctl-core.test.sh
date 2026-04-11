@@ -234,6 +234,51 @@ test_cli_help_lists_runctl() {
   local out
   out="$("$ROOT/bin/runctl" --help)"
   assert_contains "$out" "runctl"
+  assert_contains "$out" "run-sh"
+}
+
+test_cli_run_sh_prints_example_file() {
+  local got
+  got="$("$ROOT/bin/runctl" run-sh)"
+  assert_contains "$got" "Thin project runner"
+  cmp -s <("$ROOT/bin/runctl" run-sh) "$ROOT/examples/run.sh.example" || fail "run-sh should match examples/run.sh.example"
+  cmp -s <("$ROOT/bin/runctl" run-sh --print) <("$ROOT/bin/runctl" run-sh) || fail "run-sh --print should match default"
+}
+
+test_cli_run_sh_rejects_unknown_option() {
+  set +e
+  local ec out
+  out="$("$ROOT/bin/runctl" run-sh --not-a-real-flag 2>&1)"
+  ec=$?
+  set -e
+  [[ "$ec" -ne 0 ]] || fail "run-sh should reject unknown flags"
+  assert_contains "$out" "unknown option"
+}
+
+test_cli_run_sh_write_creates_executable_run_sh() {
+  local d="$TEST_TMP_ROOT/run-sh-write-proj"
+  rm -rf "$d"
+  mkdir -p "$d"
+  local out
+  out="$(cd "$d" && "$ROOT/bin/runctl" run-sh --write 2>&1)"
+  assert_contains "$out" "wrote"
+  assert_contains "$out" "run.sh"
+  [[ -x "$d/run.sh" ]] || fail "run.sh should be executable"
+  cmp -s "$d/run.sh" "$ROOT/examples/run.sh.example" || fail "written run.sh should match examples/run.sh.example"
+}
+
+test_cli_run_sh_write_refuses_overwrite_without_force() {
+  local d="$TEST_TMP_ROOT/run-sh-write-twice"
+  rm -rf "$d"
+  mkdir -p "$d"
+  (cd "$d" && "$ROOT/bin/runctl" run-sh --write >/dev/null)
+  set +e
+  local ec out
+  out="$(cd "$d" && "$ROOT/bin/runctl" run-sh --write 2>&1)"
+  ec=$?
+  set -e
+  [[ "$ec" -ne 0 ]] || fail "run-sh --write should refuse overwrite without --force"
+  assert_contains "$out" "already exists"
 }
 
 test_cli_open_fails_without_ports_env() {
@@ -298,6 +343,10 @@ main() {
   runner_it "stop succeeds on a tree with no daemons" test_cli_stop_is_idempotent_on_clean_tree
   runner_it "status includes the resolved project path" test_cli_status_prints_resolved_project_path
   runner_it "--help mentions runctl" test_cli_help_lists_runctl
+  runner_it "run-sh prints examples/run.sh.example" test_cli_run_sh_prints_example_file
+  runner_it "run-sh rejects unknown options" test_cli_run_sh_rejects_unknown_option
+  runner_it "run-sh --write creates executable run.sh" test_cli_run_sh_write_creates_executable_run_sh
+  runner_it "run-sh --write refuses overwrite without --force" test_cli_run_sh_write_refuses_overwrite_without_force
   runner_it "open exits 1 when .run/ports.env is missing" test_cli_open_fails_without_ports_env
   runner_it "logs exits 1 when the inferred log file is missing" test_cli_logs_fails_when_default_log_file_missing
 

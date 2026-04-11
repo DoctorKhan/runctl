@@ -71,6 +71,19 @@ if [[ -t 1 ]]; then
   _c=$'\033[36m' _y=$'\033[33m' _g=$'\033[32m'
 fi
 
+# Semver from this package's package.json (for --version and update banners).
+_runctl_pkg_version() {
+  local ver="?"
+  if command -v node >/dev/null 2>&1; then
+    ver="$(
+      node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version);' \
+        "$RUNCTL_PKG_ROOT/package.json" 2>/dev/null || echo "?"
+    )"
+  fi
+  printf '%s' "$ver"
+}
+
+
 usage() {
   cat <<EOF
 ${_b}runctl${_r} — dev-server orchestrator & port manager
@@ -88,6 +101,7 @@ ${_y}Commands${_r}
   ${_c}ports gc${_r}                      Clean up stale port claims
   ${_c}env expand${_r} <manifest> [opts]  Generate .env.local from manifest
   ${_c}doctor${_r}                        Check Node, tooling, and project basics
+  ${_c}run-sh${_r} [--print|--write] [opts]   Emit example ${_d}run.sh${_r} ${_d}(see runctl run-sh --help)${_r}
   ${_c}update${_r} [npm|git|auto] [opts]  Update global runctl ${_d}(default: auto; see runctl update --help)${_r}
   ${_c}install${_r} [args]               Install dependencies ${_d}(pnpm preferred; npm fallback when PM=pnpm)${_r}
   ${_c}run${_r} <script> [args]          ${_d}package manager run (PM env, default pnpm)${_r}
@@ -98,7 +112,7 @@ ${_y}Options${_r}
   ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
   ${_c}--open${_r}                        After a successful start, open the app URL ${_d}(same as ${_c}runctl open${_r})${_r}
   ${_c}RUNCTL_PROJECT_ROOT${_r}           Repo root for .env + install/run/test ${_d}(default: cwd)${_r}
-  ${_c}version${_r} | ${_c}--version${_r} | ${_c}-v${_r}     Print version and install path
+  ${_c}version${_r} | ${_c}--version${_r} | ${_c}-v${_r}     Print version and package install path
   ${_c}--help${_r}, ${_c}-h${_r}                     Show this help
 
 ${_d}Quick start — add to package.json:
@@ -417,9 +431,10 @@ cmd_update() {
   fi
   [[ -n "$MODE" ]] || MODE="auto"
 
-  local pm git_target
+  local pm git_target ver_now
   pm="$(cmd_update_pick_pm "$PM")" || exit 1
   git_target="${GIT_BASE}#${GIT_REF}"
+  ver_now="$(_runctl_pkg_version)"
 
   _remove_conflicting_global_runctl() {
     # A legacy package named "runctl" can own the same binary name and shadow @zendero/runctl.
@@ -452,7 +467,7 @@ cmd_update() {
 
   _update_registry() {
     local spec="${PKG}@latest"
-    printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} registry ${_g}${spec}${_r}" >&2
+    printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} ${_c}v${ver_now}${_r} ${_d}·${_r} registry ${_g}${spec}${_r}" >&2
     _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
       _runctl_pnpm_exec add -g --force --loglevel error "$spec"
@@ -465,10 +480,10 @@ cmd_update() {
     local sha spec
     if sha="$(_resolve_git_ref_sha "$GIT_BASE" "$GIT_REF")"; then
       spec="${GIT_BASE}#${sha}"
-      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} git ${_g}${GIT_REF}${_r} ${_d}@${sha:0:12}${_r}" >&2
+      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} ${_c}v${ver_now}${_r} ${_d}·${_r} git ${_g}${GIT_REF}${_r} ${_d}@${sha:0:12}${_r}" >&2
     else
       spec="$git_target"
-      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} git ${_g}${git_target}${_r}" >&2
+      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} ${_c}v${ver_now}${_r} ${_d}·${_r} git ${_g}${git_target}${_r}" >&2
       echo "runctl update: could not resolve ref to SHA; proceeding with ref directly." >&2
     fi
     _remove_conflicting_global_runctl
@@ -497,6 +512,10 @@ cmd_update() {
       exit 1
       ;;
   esac
+
+  local ver_installed
+  ver_installed="$(_runctl_pkg_version)"
+  printf '%s\n' "${_g}✓${_r} ${_b}runctl${_r} ${_c}v${ver_installed}${_r} ${_d}· global install refreshed${_r}" >&2
 
   _runctl_maybe_print_pnpm_update_hint "$pm"
 }
@@ -640,15 +659,129 @@ cmd_test() {
   (cd "$root" && exec "$pm" test "$@")
 }
 
-cmd_version_print() {
-  local ver="?"
-  if command -v node >/dev/null 2>&1; then
-    ver="$(
-      node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version);' \
-        "$RUNCTL_PKG_ROOT/package.json" 2>/dev/null || echo "?"
-    )"
+cmd_run_sh_usage() {
+  cat <<EOF
+${_b}runctl run-sh${_r} — emit the canonical example ${_c}run.sh${_r} (thin wrapper → runctl)
+
+${_y}Usage:${_r}
+  runctl run-sh [--print]
+  runctl run-sh --write [--force] [-C dir]
+
+${_y}Description${_r}
+  Reads ${_c}examples/run.sh.example${_r} from this package (falls back to ${_c}run.sh${_r}).
+
+  ${_c}--print${_r} ${_d}(default)${_r} prints to stdout — redirect into your repo:
+    ${_d}runctl run-sh > run.sh && chmod +x run.sh${_r}
+
+  ${_c}--write${_r} writes ${_c}run.sh${_r} under the target directory (default: ${_c}\$PWD${_r} or ${_c}RUNCTL_PROJECT_ROOT${_r} when set).
+    Refuses to overwrite an existing file unless ${_c}--force${_r}.
+
+${_y}Options${_r}
+  ${_c}--print${_r}              Print to stdout ${_d}(default when --write not used)${_r}
+  ${_c}--write${_r} | ${_c}-w${_r}           Write ${_c}run.sh${_r} in the target directory
+  ${_c}--force${_r} | ${_c}-f${_r}           Overwrite ${_c}run.sh${_r} if it already exists
+  ${_c}-C${_r} ${_c}dir${_r} | ${_c}--dir${_r} ${_c}dir${_r}   Target directory (default: ${_c}RUNCTL_PROJECT_ROOT${_r} or cwd)
+  ${_c}-h${_r} | ${_c}--help${_r}           Show this help
+EOF
+}
+
+_runctl_run_sh_example_path() {
+  local ex="$RUNCTL_PKG_ROOT/examples/run.sh.example"
+  local fb="$RUNCTL_PKG_ROOT/run.sh"
+  if [[ -f "$ex" && -r "$ex" ]]; then
+    printf '%s' "$ex"
+    return 0
   fi
-  printf '%s\n' "runctl $ver — $RUNCTL_PKG_ROOT"
+  if [[ -f "$fb" && -r "$fb" ]]; then
+    printf '%s' "$fb"
+    return 0
+  fi
+  return 1
+}
+
+cmd_run_sh() {
+  local action=print
+  local force=0
+  local target_dir=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --print)
+        action=print
+        shift
+        ;;
+      --write | -w)
+        action=write
+        shift
+        ;;
+      --force | -f)
+        force=1
+        shift
+        ;;
+      -C | --dir)
+        if [[ $# -lt 2 ]]; then
+          echo "runctl run-sh: $1 requires a directory" >&2
+          exit 1
+        fi
+        target_dir="$(cd "$2" && pwd)" || exit 1
+        shift 2
+        ;;
+      -h | --help)
+        cmd_run_sh_usage
+        return 0
+        ;;
+      -*)
+        echo "runctl run-sh: unknown option: $1" >&2
+        cmd_run_sh_usage >&2
+        exit 1
+        ;;
+      *)
+        echo "runctl run-sh: unexpected argument: $1" >&2
+        cmd_run_sh_usage >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$target_dir" ]]; then
+    if [[ -n "${RUNCTL_PROJECT_ROOT:-}" && -d "$RUNCTL_PROJECT_ROOT" ]]; then
+      target_dir="$(cd "$RUNCTL_PROJECT_ROOT" && pwd)"
+    else
+      target_dir="$(pwd)"
+    fi
+  fi
+
+  local path
+  path="$(_runctl_run_sh_example_path)" || {
+    echo "runctl run-sh: example not found under $RUNCTL_PKG_ROOT" >&2
+    exit 1
+  }
+
+  if [[ "$action" == "write" ]]; then
+    local out="$target_dir/run.sh"
+    if [[ -e "$out" && "$force" -ne 1 ]]; then
+      echo "runctl run-sh: $out already exists (use --force to overwrite)" >&2
+      exit 1
+    fi
+    cat "$path" >"$out"
+    chmod +x "$out"
+    echo "runctl run-sh: wrote $out" >&2
+    return 0
+  fi
+
+  cat "$path"
+}
+
+cmd_version_print() {
+  local ver
+  ver="$(_runctl_pkg_version)"
+  if [[ -t 1 ]]; then
+    printf '%s\n\n' "${_b}runctl${_r} ${_c}v${ver}${_r}"
+  else
+    printf 'runctl %s\n\n' "$ver"
+  fi
+  printf '%s\n' "${_d}Install:${_r}"
+  printf '%s\n' "  $RUNCTL_PKG_ROOT"
 }
 
 main() {
@@ -669,6 +802,7 @@ main() {
     run)      cmd_run "$@" ;;
     exec)     cmd_exec "$@" ;;
     test)     cmd_test "$@" ;;
+    run-sh)   cmd_run_sh "$@" ;;
 
     # Plumbing
     lib-path) printf '%s\n' "$RUNCTL_PKG_ROOT/lib/run-lib.sh" ;;

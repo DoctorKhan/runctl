@@ -196,6 +196,8 @@ Listen on `process.env.PORT` (runctl sets it). Optional: `runctl start --script 
 
 **CLI vs `run-lib.sh`:** Most apps only need the **`runctl`** binary and `package.json` scripts. For shell-heavy repos, [`examples/run.sh.example`](examples/run.sh.example) shows sourcing **`lib/run-lib.sh`** (same library the CLI uses). Resolve the installed path with **`runctl lib-path`**.
 
+**Scaffold `run.sh`:** `runctl run-sh --write` writes that example to `./run.sh` (honors `RUNCTL_PROJECT_ROOT`; use `-C dir` for another directory). Use `--force` to replace an existing file. Equivalent to redirecting `runctl run-sh` to `run.sh`, but also sets the executable bit.
+
 **CI:** Prefer **`pnpm add -D @zendero/runctl`** (or a global install) so `runctl` is on `PATH` with a stable version. **`pnpm dlx @zendero/runctl`** is fine for one-off recovery; avoid relying on it for every CI job (cold cache / latency).
 
 **Roadmap (ideas):** `runctl exec` (one-off commands with the same port / `.run` contract as `start`); optional HTTP health gate before “ready”.
