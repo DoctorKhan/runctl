@@ -23,25 +23,17 @@ _runctl_read_pnpm_version_from_package_json() {
   ' "$RUNCTL_PKG_ROOT/package.json" 2>/dev/null || true
 }
 
-# Shown after runctl update (pnpm) and in --help. pnpm often suggests "pnpm self-update" but that
-# updates a different notion of "current" than the pnpm used for global -g installs (Volta/Corepack).
+# After a successful pnpm global update: short tip (global pnpm vs project pin).
 _runctl_print_pnpm_version_fixup_hint() {
   local ver
   ver="$(_runctl_read_pnpm_version_from_package_json)"
   [[ -n "$ver" ]] || ver="X.Y.Z"
   cat >&2 <<EOF
 
-runctl update: pnpm may show "Update available" or tell you to run pnpm self-update; self-update
-often does nothing useful here: it follows your project packageManager, while global installs use a
-separate default pnpm. If the footer still shows an older pnpm than you expect, fix that default — do
-not rely on pnpm self-update alone. Replace ${ver} with the version you want (match package.json).
-
-  volta install pnpm@${ver}
-  corepack enable && corepack prepare pnpm@${ver} --activate
-  RUNCTL_PNPM_VERSION=${ver} runctl update git
-  runctl update --pm npm
-
-Hide this hint: RUNCTL_UPDATE_SKIP_PNPM_HINT=1  (also suppressed when CI is set.)
+${_d}┌${_r} ${_g}runctl${_r} ${_b}tip${_r} ${_d}· global pnpm can differ from your repo's packageManager pin.${_r}
+${_d}│${_r}  ${_c}volta install pnpm@${ver}${_r}  ${_d}·${_r}  ${_c}corepack prepare pnpm@${ver} --activate${_r}
+${_d}│${_r}  ${_c}RUNCTL_PNPM_VERSION=${ver} runctl update git${_r}  ${_d}·${_r}  ${_c}runctl update --pm npm${_r}
+${_d}└${_r} ${_d}hide:${_r} ${_c}RUNCTL_UPDATE_SKIP_PNPM_HINT=1${_r}
 EOF
 }
 
@@ -460,12 +452,12 @@ cmd_update() {
 
   _update_registry() {
     local spec="${PKG}@latest"
-    echo "runctl update: installing latest from registry ($spec)..."
+    printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} registry ${_g}${spec}${_r}" >&2
     _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
-      _runctl_pnpm_exec add -g --force "$spec"
+      _runctl_pnpm_exec add -g --force --loglevel error "$spec"
     else
-      npm install -g --force "$spec"
+      npm install -g --force --silent --no-fund --no-audit "$spec"
     fi
   }
 
@@ -473,17 +465,17 @@ cmd_update() {
     local sha spec
     if sha="$(_resolve_git_ref_sha "$GIT_BASE" "$GIT_REF")"; then
       spec="${GIT_BASE}#${sha}"
-      echo "runctl update: installing from Git ref $GIT_REF (resolved to ${sha:0:12})..."
+      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} git ${_g}${GIT_REF}${_r} ${_d}@${sha:0:12}${_r}" >&2
     else
       spec="$git_target"
-      echo "runctl update: installing from Git ($git_target)..."
+      printf '%s\n' "${_c}▶${_r} ${_b}runctl update${_r} ${_d}·${_r} git ${_g}${git_target}${_r}" >&2
       echo "runctl update: could not resolve ref to SHA; proceeding with ref directly." >&2
     fi
     _remove_conflicting_global_runctl
     if [[ "$pm" == "pnpm" ]]; then
-      _runctl_pnpm_exec add -g --force "$spec"
+      _runctl_pnpm_exec add -g --force --loglevel error "$spec"
     else
-      npm install -g --force "$spec"
+      npm install -g --force --silent --no-fund --no-audit "$spec"
     fi
   }
 
