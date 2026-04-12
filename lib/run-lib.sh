@@ -317,7 +317,9 @@ run_start_package_dev() {
 
   local -a dev_extra=()
   case "$kind" in
-    next) dev_extra=(-p "$port") ;;
+    # Next reads PORT from the environment; passing `pnpm run dev -- -p <port>` becomes
+    # `next dev -- -p <port>`, which Next treats as an invalid project directory.
+    next) dev_extra=() ;;
     nuxt) dev_extra=(--port "$port") ;;
     astro) dev_extra=(--port "$port") ;;
     vite) dev_extra=(--port "$port" --strictPort) ;;
@@ -341,12 +343,17 @@ run_start_package_dev() {
     fi
   fi
   echo "run-lib: [$kind] starting pm run $pm_script on PORT=$port (service=$svc, pm=$pm)"
+  local -a daemon_cmd=("$pm" run "$pm_script" --)
+  if [[ ${#dev_extra[@]} -gt 0 ]]; then
+    daemon_cmd+=("${dev_extra[@]}")
+  fi
+  daemon_cmd+=("$@")
   local pid
   pid="$(
     run_daemon_start "$svc" \
       bash -c 'cd "$1" && export PORT="$2" HOST="$3" && shift 3 && exec "$@"' \
       _ "$RUN_PROJECT_ROOT" "$port" "$host" \
-      "$pm" run "$pm_script" -- "${dev_extra[@]}" "$@"
+      "${daemon_cmd[@]}"
   )" || return 1
 
   run_port_register "$port" "$svc" "$pid"

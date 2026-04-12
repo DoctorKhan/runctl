@@ -197,7 +197,8 @@ cmd_open() {
     echo "runctl open: PORT not found in $ports_env" >&2
     exit 1
   fi
-  [[ -z "$host" || "$host" == "0.0.0.0" || "$host" == "127.0.0.1" ]] && host="localhost"
+  # Prefer 127.0.0.1 over "localhost" (IPv6 vs IPv4 mismatch on macOS)
+  [[ -z "$host" || "$host" == "0.0.0.0" ]] && host="127.0.0.1"
   local url="http://${host}:${port}"
   echo "runctl open: opening ${url}"
   if command -v open >/dev/null 2>&1; then
