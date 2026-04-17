@@ -95,7 +95,7 @@ ${_y}Commands${_r}
   ${_c}open${_r}  [dir]                   Open running dev server in browser
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
-  ${_c}ps${_r}                            List running programs with ports/projects
+  ${_c}ps${_r} [--refresh] [--live]       List running programs (fast cache); reconcile in background
   ${_c}reconcile${_r} [dir]               Sync ${_d}.run/pids/*.pid${_r} + port registry from listener on ${_c}PORT${_r} in ${_d}.run/ports.env${_r}
   ${_c}stray kill${_r} [dir] [--dry-run]  Kill dev PIDs under this project not in a live ${_d}.run/pids${_r} tree ${_d}(cwd match; see help)${_r}
   ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default: ${_c}RUNCTL_SERVICE${_r} or package name, else web)${_r}
@@ -273,9 +273,47 @@ cmd_ports() {
 }
 
 cmd_ps() {
+  local refresh=0
+  local show_live=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --refresh)
+        refresh=1
+        shift
+        ;;
+      --live)
+        show_live=1
+        shift
+        ;;
+      -h|--help)
+        cat <<EOF
+Usage: runctl ps [--refresh] [--live]
+
+Default behavior:
+  - Reads registry/.run-derived running table immediately.
+  - Starts live-listener reconcile in background to update .run and registry.
+
+Options:
+  --refresh   Run reconcile synchronously before printing results.
+  --live      Include live listeners (cwd-derived) section.
+EOF
+        return 0
+        ;;
+      *)
+        echo "runctl ps: unknown option: $1" >&2
+        return 1
+        ;;
+    esac
+  done
+
   # shellcheck source=../lib/run-lib.sh
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
-  run_global_reconcile_projects_from_live_listeners
+  if [[ "$refresh" -eq 1 ]]; then
+    run_global_reconcile_projects_from_live_listeners
+  else
+    (run_global_reconcile_projects_from_live_listeners >/dev/null 2>&1 || true) &
+    echo "runctl ps: quick view from registry/.run (reconcile running in background)"
+  fi
   run_global_list_running
   local stale="${RUN_LAST_STALE_COUNT:-0}"
   if [[ "$stale" =~ ^[0-9]+$ ]] && (( stale > 0 )); then
@@ -288,8 +326,10 @@ cmd_ps() {
     echo ""
     run_global_list_running
   fi
-  echo ""
-  run_global_list_live_listeners
+  if [[ "$show_live" -eq 1 || "$refresh" -eq 1 ]]; then
+    echo ""
+    run_global_list_live_listeners
+  fi
 }
 
 cmd_stray_kill_usage() {
