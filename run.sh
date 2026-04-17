@@ -12,6 +12,7 @@ PM="${PM:-pnpm}"
 export PM
 RUNCTL_DEV_SCRIPT="${RUNCTL_DEV_SCRIPT:-dev}"
 PORT="${PORT:-3000}"
+RUNCTL_OPEN_AFTER_START="${RUNCTL_OPEN_AFTER_START:-1}"
 
 die() {
   echo "run.sh${RUN_SH_TASK:+ ($RUN_SH_TASK)}: $*" >&2
@@ -37,7 +38,7 @@ usage() {
 Usage: ./run.sh <command> [args]
 
   install | run | exec | test   → runctl (same as: runctl install|run|exec|test)
-  dev | start                   → runctl start this repo (--script RUNCTL_DEV_SCRIPT)
+  dev | start                   → runctl start this repo (--script RUNCTL_DEV_SCRIPT; opens by default)
   open | stop | status | doctor | ports | ps | logs | env | update | …
   env-expand | lib-path
   release-check | publish | release | promote | npm-whoami → scripts/maintain.sh
@@ -45,6 +46,7 @@ Usage: ./run.sh <command> [args]
 Environment:
   RUNCTL_PROJECT_ROOT  Set automatically to this script’s directory
   RUNCTL_DEV_SCRIPT    npm script for dev/start (default: dev)
+  RUNCTL_OPEN_AFTER_START  1 to auto-open after dev/start (default: 1)
   PORT                 Passed to dev/start
   PM                   package manager (default: pnpm)
 EOF
@@ -65,7 +67,11 @@ main() {
       ;;
     dev | start)
       export PORT
-      runctl_cmd start "$ROOT" --script "$RUNCTL_DEV_SCRIPT" "$@"
+      if [[ "$RUNCTL_OPEN_AFTER_START" == "1" ]]; then
+        runctl_cmd start "$ROOT" --script "$RUNCTL_DEV_SCRIPT" --open "$@"
+      else
+        runctl_cmd start "$ROOT" --script "$RUNCTL_DEV_SCRIPT" "$@"
+      fi
       ;;
     release-check | publish | release | promote | npm-whoami)
       exec "$ROOT/scripts/maintain.sh" "$cmd" "$@"

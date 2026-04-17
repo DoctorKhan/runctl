@@ -165,8 +165,24 @@ cmd_start() {
   # shellcheck source=../lib/run-lib.sh
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
   run_project_init "$proj"
-  if ! run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}"; then
+  local started_port=""
+  if ! started_port="$(run_with_lock run_start_package_dev "${args[@]+"${args[@]}"}")"; then
     return 1
+  fi
+  started_port="${started_port##*$'\n'}"
+  if [[ -n "$started_port" ]]; then
+    local host="127.0.0.1"
+    if [[ -f "$proj/.run/ports.env" ]]; then
+      while IFS= read -r line; do
+        case "$line" in
+          HOST=*) host="${line#HOST=}" ;;
+        esac
+      done <"$proj/.run/ports.env"
+    fi
+    [[ -z "$host" || "$host" == "0.0.0.0" ]] && host="127.0.0.1"
+    echo "runctl start: dev server ready"
+    echo "  url:  http://${host}:${started_port}"
+    echo "  open: runctl open   (or ./run.sh open)"
   fi
   if [[ "$open_after" -eq 1 ]]; then
     cmd_open "$proj"
