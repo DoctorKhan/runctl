@@ -181,13 +181,15 @@ cmd_open() {
   run_project_init "$proj"
   local ports_env="$proj/.run/ports.env"
   if [[ ! -f "$ports_env" ]]; then
-    echo "runctl open: no running server found (.run/ports.env missing)" >&2
-    echo "Start one first: runctl start" >&2
+    echo "runctl open: no running server found" >&2
+    echo "  reason: .run/ports.env is missing" >&2
+    echo "  next:   runctl start" >&2
     exit 1
   fi
   if ! run_local_has_live_service; then
-    echo "runctl open: no running server found (saved port is stale)" >&2
-    echo "Start one first: runctl start" >&2
+    echo "runctl open: no running server found" >&2
+    echo "  reason: saved port is stale" >&2
+    echo "  next:   runctl start" >&2
     exit 1
   fi
   local port="" host=""

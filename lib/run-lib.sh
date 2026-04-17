@@ -467,7 +467,7 @@ run_start_package_dev() {
       fi
     fi
   fi
-  echo "run-lib: [$kind] starting pm run $pm_script on PORT=$port (service=$svc, pm=$pm)"
+  echo "run-lib: start [$kind] pm=$pm script=$pm_script service=$svc port=$port"
   local -a daemon_cmd=("$pm" run "$pm_script" --)
   if [[ ${#dev_extra[@]} -gt 0 ]]; then
     daemon_cmd+=("${dev_extra[@]}")
@@ -518,9 +518,9 @@ run_daemon_start() {
         echo "run_daemon_start: ${name} already running (pid $oldpid)" >&2
         return 1
       fi
-      echo "run_daemon_start: cleared stale pid for ${name} (pid $oldpid not listening on port $port)" >&2
+      echo "run_daemon_start: stale pid cleared for ${name} (pid $oldpid not listening on port $port)" >&2
     else
-      echo "run_daemon_start: cleared stale pid for ${name} (was $oldpid)" >&2
+      echo "run_daemon_start: stale pid cleared for ${name} (was $oldpid)" >&2
     fi
     rm -f "$pidf"
   fi
@@ -760,7 +760,7 @@ run_local_status() {
   local has_services=0
   printf 'services\n'
   printf '  %-14s %-8s %-8s %s\n' "name" "pid" "state" "log"
-  printf '  %-14s %-8s %-8s %s\n' "--------------" "--------" "--------" "---"
+  printf '  %-14s %-8s %-8s %s\n' "--------------" "--------" "--------" "------------------------------------------"
   shopt -s nullglob
   for f in "$RUN_LOCAL_STATE/pids"/*.pid; do
     has_services=1
@@ -778,11 +778,14 @@ run_local_status() {
     printf '  %s\n' "(none)"
   fi
 
+  printf '\n'
+  printf 'claimed ports\n'
   if [[ -s "$RUN_LOCAL_STATE/claimed-ports" ]]; then
-    printf '\n'
-    printf 'claimed ports\n'
     sed 's/^/  - /' "$RUN_LOCAL_STATE/claimed-ports"
+  else
+    printf '  %s\n' "(none)"
   fi
+
   if [[ -f "$RUN_LOCAL_STATE/ports.env" ]]; then
     local env_port="" env_host="" env_service=""
     while IFS= read -r line; do
