@@ -202,6 +202,9 @@ cmd_open() {
     echo "  next:   runctl start" >&2
     exit 1
   fi
+  if command -v lsof >/dev/null 2>&1; then
+    run_project_reconcile_pidfiles 2>/dev/null || true
+  fi
   if ! run_local_has_live_service; then
     echo "runctl open: no running server found" >&2
     echo "  reason: saved port is stale" >&2

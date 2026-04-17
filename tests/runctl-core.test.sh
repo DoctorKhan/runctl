@@ -425,6 +425,63 @@ test_cli_open_fails_without_ports_env() {
   assert_contains "$out" "ports.env"
 }
 
+test_cli_open_reconciles_listener_from_ports_env() {
+  local d="$TEST_TMP_ROOT/open-reconcile"
+  local fakebin="$d/bin"
+  local open_log="$d/open.log"
+  mkdir -p "$d/.run/pids" "$fakebin"
+  printf '%s\n' '{"name":"open-reconcile"}' >"$d/package.json"
+  run_project_init "$d"
+  local port
+  port="$(run_find_free_port 41234)"
+  cat >"$d/.run/ports.env" <<EOF
+PORT=$port
+RUN_DEV_SERVICE=web
+HOST=127.0.0.1
+EOF
+  printf '%s\n' "999999" >"$d/.run/pids/web.pid"
+
+  cat >"$fakebin/open" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >"$RUNCTL_TEST_OPEN_LOG"
+EOF
+  chmod +x "$fakebin/open"
+
+  cat >"$fakebin/lsof" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+pid="${RUNCTL_TEST_FAKE_PID:?}"
+cwd="${RUNCTL_TEST_FAKE_CWD:?}"
+case "$*" in
+  *"-a -p $pid -d cwd -Fn"*)
+    printf 'n%s\n' "$cwd"
+    ;;
+  *"-iTCP:"*"-sTCP:LISTEN -n -P"*)
+    printf 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n'
+    printf 'node %s test 0u IPv4 0 0t0 TCP 127.0.0.1 (LISTEN)\n' "$pid"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "$fakebin/lsof"
+
+  (
+    cd "$d"
+    PATH="$fakebin:$PATH" \
+      RUNCTL_TEST_OPEN_LOG="$open_log" \
+      RUNCTL_TEST_FAKE_PID="$$" \
+      RUNCTL_TEST_FAKE_CWD="$d" \
+      "$ROOT/bin/runctl" open "$d" >/dev/null
+
+    assert_equals "$(cat "$open_log")" "http://127.0.0.1:$port"
+    local reconciled_pid
+    reconciled_pid="$(cat "$d/.run/pids/web.pid")"
+    assert_equals "$reconciled_pid" "$$"
+  )
+}
+
 test_cli_logs_fails_when_default_log_file_missing() {
   local d="$TEST_TMP_ROOT/logs-missing"
   mkdir -p "$d/.run/logs"
@@ -558,6 +615,7 @@ main() {
   runner_it "run-sh --write creates executable run.sh" test_cli_run_sh_write_creates_executable_run_sh
   runner_it "run-sh --write refuses overwrite without --force" test_cli_run_sh_write_refuses_overwrite_without_force
   runner_it "open exits 1 when .run/ports.env is missing" test_cli_open_fails_without_ports_env
+  runner_it "open reconciles stale pid metadata from ports.env before failing" test_cli_open_reconciles_listener_from_ports_env
   runner_it "logs exits 1 when the inferred log file is missing" test_cli_logs_fails_when_default_log_file_missing
 
   runner_summary
