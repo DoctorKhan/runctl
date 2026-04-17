@@ -119,6 +119,13 @@ run_port_listening() {
   lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1
 }
 
+run_port_listener_pid() {
+  local port="$1"
+  [[ -n "$port" ]] || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2; exit}'
+}
+
 # Best-effort port killer fallback for listeners we know by TCP port.
 # Prefer npx kill-port per user workflow; fall back to pnpm dlx when available.
 run_kill_port_fallback() {
@@ -699,7 +706,7 @@ run_pid_program_name() {
 
 run_global_list_running() {
   mkdir -p "$RUN_GLOBAL_STATE/ports"
-  local f port tmp pid svc proot _line _k _v prog stale_count
+  local f port tmp pid svc proot _line _k _v prog stale_count actual_cwd
   stale_count=0
   tmp="$(mktemp "${TMPDIR:-/tmp}/runlib-running.XXXXXX")"
   shopt -s nullglob
@@ -729,6 +736,10 @@ run_global_list_running() {
     if ! run_pid_listens_on_port "$pid" "$port"; then
       stale_count=$((stale_count + 1))
       continue
+    fi
+    actual_cwd="$(run_pid_cwd "$pid" || true)"
+    if [[ -n "$actual_cwd" ]]; then
+      proot="$actual_cwd"
     fi
     prog="$(run_pid_program_name "$pid" || true)"
     [[ -n "$prog" ]] || prog="(unknown)"
@@ -801,6 +812,54 @@ run_local_status() {
     [[ -n "$env_port" ]] && printf '  %-10s %s\n' "port:" "$env_port"
     [[ -n "$env_host" ]] && printf '  %-10s %s\n' "host:" "$env_host"
     printf '  %-10s %s\n' "env-file:" "$RUN_LOCAL_STATE/ports.env"
+    if [[ -n "$env_port" ]] && command -v lsof >/dev/null 2>&1; then
+      local live_pid live_cwd owner_state
+      live_pid="$(run_port_listener_pid "$env_port" || true)"
+      if [[ -n "$live_pid" ]] && run_pid_alive "$live_pid"; then
+        live_cwd="$(run_pid_cwd "$live_pid" || true)"
+        owner_state="external"
+        if run_pid_cwd_under_project "$live_pid"; then
+          owner_state="this-project"
+        fi
+        printf '  %-10s %s\n' "listener:" "pid=$live_pid owner=$owner_state cwd=${live_cwd:--}"
+      else
+        printf '  %-10s %s\n' "listener:" "none on port $env_port"
+      fi
+    fi
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    local pid ports_list has_untracked protected protected_set candidates
+    has_untracked=0
+    protected="$(run_project_protected_pids || true)"
+    protected_set=$'\n'"$protected"$'\n'
+    candidates="$(
+      lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null \
+        | awk 'NR>1 {print $2}' \
+        | sort -u
+    )"
+    printf '\n'
+    printf 'untracked listeners\n'
+    printf '  %-8s %-12s %s\n' "pid" "ports" "cwd"
+    printf '  %-8s %-12s %s\n' "--------" "------------" "------------------------------------------"
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] || continue
+      run_pid_alive "$pid" || continue
+      run_pid_cwd_under_project "$pid" || continue
+      [[ -n "$protected" ]] && case "$protected_set" in *$'\n'"$pid"$'\n'*) continue ;; esac
+      ports_list="$(
+        lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null \
+          | sed -nE 's/.*:([0-9]+)[[:space:]]+\(LISTEN\).*/\1/p' \
+          | paste -sd, -
+        true
+      )"
+      [[ -n "$ports_list" ]] || continue
+      has_untracked=1
+      printf '  %-8s %-12s %s\n' "$pid" "$ports_list" "$(run_pid_cwd "$pid" || echo -)"
+    done <<<"$candidates"
+    if [[ "$has_untracked" -eq 0 ]]; then
+      printf '  %s\n' "(none)"
+    fi
   fi
 }
 
