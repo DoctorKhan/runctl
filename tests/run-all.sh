@@ -22,10 +22,12 @@ echo ""
 bash "$ROOT/tests/runctl-ps.test.sh"
 echo ""
 bash "$ROOT/tests/runctl-core.test.sh"
+echo ""
+bash "$ROOT/tests/runctl-reconcile-stray.test.sh"
 
 echo ""
 printf '%s────────────────────────────────────────────────────────────────%s\n' "${_D}" "${_R}"
-printf '  %sAll suites passed%s (%srunctl-ps.test.sh%s, %srunctl-core.test.sh%s)\n' \
-  "${_B}" "${_R}" "${_D}" "${_R}" "${_D}" "${_R}"
+printf '  %sAll suites passed%s (%srunctl-ps.test.sh%s, %srunctl-core.test.sh%s, %srunctl-reconcile-stray.test.sh%s)\n' \
+  "${_B}" "${_R}" "${_D}" "${_R}" "${_D}" "${_R}" "${_D}" "${_R}" "${_D}" "${_R}"
 printf '%s────────────────────────────────────────────────────────────────%s\n' "${_D}" "${_R}"
 echo ""

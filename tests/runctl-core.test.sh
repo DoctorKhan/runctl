@@ -131,6 +131,138 @@ test_framework_kind_and_base_port_for_vite_and_next() {
   assert_equals "$(run_infer_dev_base_port)" "3000"
 }
 
+# --- run_kill_port_fallback ---
+
+test_kill_port_fallback_prefers_npx() {
+  local d="$TEST_TMP_ROOT/kill-port-npx"
+  mkdir -p "$d/bin"
+  cat >"$d/bin/npx" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >"${RUNCTL_TEST_NPX_LOG:?}"
+EOF
+  chmod +x "$d/bin/npx"
+  cat >"$d/bin/lsof" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "$d/bin/lsof"
+  local log="$d/npx.log"
+  PATH="$d/bin:$PATH" RUNCTL_TEST_NPX_LOG="$log" run_kill_port_fallback 4321
+  assert_equals "$(tr -d '\n' <"$log")" "--yes kill-port 4321"
+}
+
+test_kill_port_fallback_uses_pnpm_when_npx_missing() {
+  local d="$TEST_TMP_ROOT/kill-port-pnpm"
+  mkdir -p "$d/bin"
+  cat >"$d/bin/npx" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 1
+EOF
+  chmod +x "$d/bin/npx"
+  cat >"$d/bin/pnpm" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >"${RUNCTL_TEST_PNPM_LOG:?}"
+EOF
+  chmod +x "$d/bin/pnpm"
+  cat >"$d/bin/lsof" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "$d/bin/lsof"
+  local log="$d/pnpm.log"
+  PATH="$d/bin:$PATH" RUNCTL_TEST_PNPM_LOG="$log" run_kill_port_fallback 5173
+  assert_equals "$(tr -d '\n' <"$log")" "dlx kill-port 5173"
+}
+
+# --- run_start_package_dev (reuse/adopt/fallback flow) ---
+
+test_start_reuses_recorded_server_and_skips_spawn() {
+  local d="$TEST_TMP_ROOT/start-reuse"
+  mkdir -p "$d"
+  printf '%s\n' '{"name":"reuse-app"}' >"$d/package.json"
+  run_project_init "$d"
+  local out
+  out="$(
+    run_require_node() { :; }
+    run_infer_dev_base_port() { printf '%s\n' 3000; }
+    run_project_reconcile_pidfiles() { :; }
+    run_project_try_reuse_recorded_dev() { printf '%s\n' 3210; return 0; }
+    run_project_try_adopt_external_dev_server() { return 1; }
+    run_find_free_port() { printf '%s\n' 3999; }
+    run_detect_package_manager() { printf '%s\n' pnpm; }
+    run_js_framework_kind() { printf '%s\n' generic; }
+    run_daemon_start() { printf '%s\n' 99999; }
+    run_port_register() { :; }
+    run_package_has_script() { return 1; }
+    run_start_package_dev web auto
+  )"
+  assert_equals "$out" "3210"
+}
+
+test_start_adopts_external_server_and_skips_spawn() {
+  local d="$TEST_TMP_ROOT/start-adopt"
+  mkdir -p "$d"
+  printf '%s\n' '{"name":"adopt-app"}' >"$d/package.json"
+  run_project_init "$d"
+  local out
+  out="$(
+    run_require_node() { :; }
+    run_infer_dev_base_port() { printf '%s\n' 3000; }
+    run_project_reconcile_pidfiles() { :; }
+    run_project_try_reuse_recorded_dev() { return 1; }
+    run_project_try_adopt_external_dev_server() { printf '%s\n' 3333; return 0; }
+    run_find_free_port() { printf '%s\n' 3999; }
+    run_detect_package_manager() { printf '%s\n' pnpm; }
+    run_js_framework_kind() { printf '%s\n' generic; }
+    run_daemon_start() { printf '%s\n' 99999; }
+    run_port_register() { :; }
+    run_package_has_script() { return 1; }
+    run_start_package_dev web auto
+  )"
+  assert_equals "$out" "3333"
+}
+
+test_start_runs_kill_port_fallback_before_spawning() {
+  local d="$TEST_TMP_ROOT/start-fallback"
+  mkdir -p "$d"
+  printf '%s\n' '{"name":"fallback-app"}' >"$d/package.json"
+  run_project_init "$d"
+  cat >"$d/.run/ports.env" <<'EOF'
+PORT=3010
+RUN_DEV_SERVICE=web
+HOST=127.0.0.1
+EOF
+  local out
+  out="$(
+    run_require_node() { :; }
+    run_infer_dev_base_port() { printf '%s\n' 3000; }
+    run_project_reconcile_pidfiles() { :; }
+    run_project_try_reuse_recorded_dev() { return 1; }
+    run_project_try_adopt_external_dev_server() { return 1; }
+    run_port_listening() { [[ "$1" == "3010" ]]; }
+    run_kill_port_fallback() { printf '%s\n' "$1" >"$RUN_PROJECT_ROOT/fallback-port"; return 0; }
+    run_find_free_port() { printf '%s\n' 3020; }
+    run_detect_package_manager() { printf '%s\n' pnpm; }
+    run_js_framework_kind() { printf '%s\n' generic; }
+    run_daemon_start() { printf '%s\n' 22222; }
+    run_port_register() { :; }
+    run_package_has_script() { return 1; }
+    run_start_package_dev web auto
+  )"
+  local out_last
+  out_last="$(printf '%s\n' "$out" | tail -n 1)"
+  if [[ "$out_last" != "3020" ]]; then
+    fail "expected last output line to be 3020, got [$out_last]"
+    return 1
+  fi
+  assert_equals "$(tr -d '\n' <"$d/fallback-port")" "3010"
+}
+
 # --- CLI ---
 
 test_cli_version_aliases_match_package_and_root() {
@@ -260,7 +392,7 @@ test_cli_run_sh_write_creates_executable_run_sh() {
   rm -rf "$d"
   mkdir -p "$d"
   local out
-  out="$(cd "$d" && "$ROOT/bin/runctl" run-sh --write 2>&1)"
+  out="$(cd "$d" && RUNCTL_PROJECT_ROOT="$d" "$ROOT/bin/runctl" run-sh --write 2>&1)"
   assert_contains "$out" "wrote"
   assert_contains "$out" "run.sh"
   [[ -x "$d/run.sh" ]] || fail "run.sh should be executable"
@@ -271,10 +403,10 @@ test_cli_run_sh_write_refuses_overwrite_without_force() {
   local d="$TEST_TMP_ROOT/run-sh-write-twice"
   rm -rf "$d"
   mkdir -p "$d"
-  (cd "$d" && "$ROOT/bin/runctl" run-sh --write >/dev/null)
+  (cd "$d" && RUNCTL_PROJECT_ROOT="$d" "$ROOT/bin/runctl" run-sh --write >/dev/null)
   set +e
   local ec out
-  out="$(cd "$d" && "$ROOT/bin/runctl" run-sh --write 2>&1)"
+  out="$(cd "$d" && RUNCTL_PROJECT_ROOT="$d" "$ROOT/bin/runctl" run-sh --write 2>&1)"
   ec=$?
   set -e
   [[ "$ec" -ne 0 ]] || fail "run-sh --write should refuse overwrite without --force"
@@ -306,6 +438,68 @@ test_cli_logs_fails_when_default_log_file_missing() {
   assert_contains "$out" "no file at"
 }
 
+test_external_adopt_auto_requires_projects_path() {
+  unset RUNCTL_EXTERNAL_ADOPT RUNCTL_PROJECTS_ROOT || true
+  RUN_PROJECT_ROOT="/tmp/no-projects-segment-here"
+  export RUN_PROJECT_ROOT
+  if run_project_external_adopt_eligible; then
+    fail "auto adopt should be off without /Projects/ in path"
+    return 1
+  fi
+  return 0
+}
+
+test_external_adopt_auto_on_under_projects() {
+  unset RUNCTL_EXTERNAL_ADOPT RUNCTL_PROJECTS_ROOT || true
+  RUN_PROJECT_ROOT="/Users/example/Documents/Projects/MyApp"
+  export RUN_PROJECT_ROOT
+  run_project_external_adopt_eligible || fail "expected auto adopt under .../Projects/"
+}
+
+test_external_adopt_projects_root_gate() {
+  local root="$TEST_TMP_ROOT/adopt-gate-root"
+  local inner="$root/nested/app"
+  mkdir -p "$inner"
+  unset RUNCTL_EXTERNAL_ADOPT || true
+  RUNCTL_PROJECTS_ROOT="$root"
+  export RUNCTL_PROJECTS_ROOT
+  RUN_PROJECT_ROOT="$inner"
+  export RUN_PROJECT_ROOT
+  run_project_external_adopt_eligible || fail "expected eligible under RUNCTL_PROJECTS_ROOT"
+  RUN_PROJECT_ROOT="/tmp/outside-adopt-gate"
+  export RUN_PROJECT_ROOT
+  if run_project_external_adopt_eligible; then
+    fail "expected ineligible outside RUNCTL_PROJECTS_ROOT"
+    return 1
+  fi
+  unset RUNCTL_PROJECTS_ROOT
+  return 0
+}
+
+test_external_adopt_off_disables() {
+  RUN_PROJECT_ROOT="/any/Projects/foo"
+  export RUN_PROJECT_ROOT
+  RUNCTL_EXTERNAL_ADOPT=off
+  export RUNCTL_EXTERNAL_ADOPT
+  if run_project_external_adopt_eligible; then
+    fail "off should disable"
+    return 1
+  fi
+  unset RUNCTL_EXTERNAL_ADOPT
+  return 0
+}
+
+test_external_adopt_on_ignores_path() {
+  RUN_PROJECT_ROOT="/tmp/plain"
+  export RUN_PROJECT_ROOT
+  RUNCTL_EXTERNAL_ADOPT=on
+  export RUNCTL_EXTERNAL_ADOPT
+  unset RUNCTL_PROJECTS_ROOT || true
+  run_project_external_adopt_eligible || fail "on should allow any path"
+  unset RUNCTL_EXTERNAL_ADOPT
+  return 0
+}
+
 main() {
   runner_init "tests/runctl-core.test.sh"
 
@@ -330,6 +524,22 @@ main() {
 
   runner_suite "run_js_framework_kind & run_infer_dev_base_port"
   runner_it "infers vite (5173) and next (3000) from dependencies" test_framework_kind_and_base_port_for_vite_and_next
+
+  runner_suite "run_kill_port_fallback"
+  runner_it "prefers npx kill-port when available" test_kill_port_fallback_prefers_npx
+  runner_it "falls back to pnpm dlx when npx is missing" test_kill_port_fallback_uses_pnpm_when_npx_missing
+
+  runner_suite "run_start_package_dev flow"
+  runner_it "reuses a recorded live server and returns its port" test_start_reuses_recorded_server_and_skips_spawn
+  runner_it "adopts an external server and returns its port" test_start_adopts_external_server_and_skips_spawn
+  runner_it "kills lingering known port before starting a new daemon" test_start_runs_kill_port_fallback_before_spawning
+
+  runner_suite "run_project_external_adopt_eligible"
+  runner_it "auto mode is off without a /Projects/ path segment" test_external_adopt_auto_requires_projects_path
+  runner_it "auto mode is on when path contains /Projects/" test_external_adopt_auto_on_under_projects
+  runner_it "honors RUNCTL_PROJECTS_ROOT as a directory prefix" test_external_adopt_projects_root_gate
+  runner_it "off disables adoption regardless of path" test_external_adopt_off_disables
+  runner_it "on enables adoption for any project path" test_external_adopt_on_ignores_path
 
   runner_suite "CLI"
   runner_it "version, --version, and -v match package.json and show install root" test_cli_version_aliases_match_package_and_root

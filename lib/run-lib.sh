@@ -119,6 +119,33 @@ run_port_listening() {
   lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1
 }
 
+# Best-effort port killer fallback for listeners we know by TCP port.
+# Prefer npx kill-port per user workflow; fall back to pnpm dlx when available.
+run_kill_port_fallback() {
+  local port="$1"
+  [[ -n "$port" ]] || return 1
+  if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+    echo "run_kill_port_fallback: invalid port: $port" >&2
+    return 1
+  fi
+  if ! run_port_listening "$port"; then
+    return 0
+  fi
+  if command -v npx >/dev/null 2>&1; then
+    echo "run-lib: port $port still busy; trying npx kill-port" >&2
+    if npx --yes kill-port "$port" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  if command -v pnpm >/dev/null 2>&1; then
+    echo "run-lib: port $port still busy; trying pnpm dlx kill-port" >&2
+    if pnpm dlx kill-port "$port" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 run_find_free_port() {
   local p="${1:-3000}"
   local max="${2:-200}"
@@ -132,6 +159,79 @@ run_find_free_port() {
     return 1
   fi
   printf '%s' "$p"
+}
+
+# Before starting a new dev server: optionally reuse a listener not started via runctl.
+# RUNCTL_EXTERNAL_ADOPT=off disables. Default auto: path contains /Projects/ (any case) or
+# project is under RUNCTL_PROJECTS_ROOT when set. RUNCTL_EXTERNAL_ADOPT=on always scans.
+run_project_external_adopt_eligible() {
+  local mode="${RUNCTL_EXTERNAL_ADOPT:-auto}"
+  mode="$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')"
+  case "$mode" in
+    0 | off | false | no) return 1 ;;
+  esac
+  case "$mode" in
+    1 | on | true | yes) return 0 ;;
+  esac
+  if [[ -n "${RUNCTL_PROJECTS_ROOT:-}" ]]; then
+    local pr root
+    root="$(cd "$RUNCTL_PROJECTS_ROOT" 2>/dev/null && pwd -P)" || return 1
+    pr="$(cd "$RUN_PROJECT_ROOT" 2>/dev/null && pwd -P)" || pr="$RUN_PROJECT_ROOT"
+    case "$pr" in
+      "$root" | "$root"/*) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+  case "$(printf '%s' "$RUN_PROJECT_ROOT" | tr '[:upper:]' '[:lower:]')" in
+    */projects/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# If .run/ports.env + pids/<svc>.pid describe a live listener, print PORT and return 0.
+run_project_try_reuse_recorded_dev() {
+  local svc="$1"
+  command -v lsof >/dev/null 2>&1 || return 1
+  local pidf="$RUN_LOCAL_STATE/pids/${svc}.pid"
+  [[ -f "$pidf" ]] || return 1
+  local pid port
+  pid="$(tr -d '[:space:]' <"$pidf" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+  run_pid_alive "$pid" || return 1
+  [[ -f "$RUN_LOCAL_STATE/ports.env" ]] || return 1
+  run_read_ports_env "$RUN_LOCAL_STATE/ports.env" || return 1
+  port="$RUN_RECON_PORT"
+  [[ -n "$port" ]] || return 1
+  run_pid_listens_on_port "$pid" "$port" || return 1
+  echo "run-lib: reusing recorded dev server ($svc pid=$pid port=$port)" >&2
+  printf '%s\n' "$port"
+  return 0
+}
+
+# First TCP listener on [base, base+span) whose PID is cwd+dev-runtime for this repo.
+# Prints only the port to stdout on success; messages on stderr.
+run_project_try_adopt_external_dev_server() {
+  local svc="$1" base="$2" span="${3:-120}"
+  command -v lsof >/dev/null 2>&1 || return 1
+  run_project_external_adopt_eligible || return 1
+  local p pid
+  for ((p = base; p < base + span; p++)); do
+    run_port_listening "$p" || continue
+    pid="$(lsof -iTCP:"$p" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2; exit}')"
+    [[ -n "$pid" ]] || continue
+    run_pid_is_stray_dev_candidate "$pid" || continue
+    echo "run-lib: adopting external dev server ($svc port=$p pid=$pid)" >&2
+    mkdir -p "$RUN_LOCAL_STATE/pids" "$RUN_LOCAL_STATE/logs"
+    run_write_ports_env "$p" "$svc"
+    printf '%s\n' "$pid" >"$RUN_LOCAL_STATE/pids/${svc}.pid"
+    run_port_register "$p" "$svc" "$pid"
+    if [[ -f "$RUN_LOCAL_STATE/claimed-ports" ]] && ! grep -qx "$p" "$RUN_LOCAL_STATE/claimed-ports" 2>/dev/null; then
+      printf '%s\n' "$p" >>"$RUN_LOCAL_STATE/claimed-ports"
+    fi
+    printf '%s\n' "$p"
+    return 0
+  done
+  return 1
 }
 
 # --- JS / Node dev servers (Vite, Next, Nuxt, Astro, etc.) -----------------
@@ -308,6 +408,31 @@ run_start_package_dev() {
     base_port="$base_raw"
   fi
 
+  # Reconcile .run from a live listener (e.g. dev started without runctl) before deciding to spawn.
+  if command -v lsof >/dev/null 2>&1 && [[ -f "$RUN_LOCAL_STATE/ports.env" ]]; then
+    run_project_reconcile_pidfiles 2>/dev/null || true
+  fi
+  if run_project_try_reuse_recorded_dev "$svc"; then
+    return 0
+  fi
+  if [[ -f "$RUN_LOCAL_STATE/ports.env" ]] && run_read_ports_env "$RUN_LOCAL_STATE/ports.env"; then
+    if [[ -n "${RUN_RECON_SVC:-}" && "$RUN_RECON_SVC" != "$svc" ]]; then
+      if run_project_try_reuse_recorded_dev "$RUN_RECON_SVC"; then
+        return 0
+      fi
+    fi
+  fi
+  local adopted=""
+  if adopted="$(run_project_try_adopt_external_dev_server "$svc" "$base_port")"; then
+    printf '%s\n' "$adopted"
+    return 0
+  fi
+  if [[ -f "$RUN_LOCAL_STATE/ports.env" ]] && run_read_ports_env "$RUN_LOCAL_STATE/ports.env"; then
+    if [[ -n "${RUN_RECON_PORT:-}" ]] && run_port_listening "$RUN_RECON_PORT"; then
+      run_kill_port_fallback "$RUN_RECON_PORT" || true
+    fi
+  fi
+
   local port
   port="$(run_find_free_port "$base_port")" || return 1
 
@@ -410,7 +535,15 @@ run_daemon_stop() {
   local pidf="$RUN_LOCAL_STATE/pids/${name}.pid"
   [[ -f "$pidf" ]] || return 0
   local pid
+  local port=""
   pid="$(cat "$pidf")"
+  if [[ -f "$RUN_LOCAL_STATE/ports.env" ]]; then
+    while IFS='=' read -r k v; do
+      case "$k" in
+        PORT) port="$v" ;;
+      esac
+    done <"$RUN_LOCAL_STATE/ports.env"
+  fi
   if run_pid_alive "$pid"; then
     kill "$pid" 2>/dev/null || true
     local n=0
@@ -421,6 +554,9 @@ run_daemon_stop() {
     if run_pid_alive "$pid"; then
       kill -9 "$pid" 2>/dev/null || true
     fi
+  fi
+  if [[ -n "$port" ]] && run_port_listening "$port"; then
+    run_kill_port_fallback "$port" || true
   fi
   rm -f "$pidf"
 }
@@ -663,4 +799,270 @@ run_local_status() {
     [[ -n "$env_host" ]] && printf '  %-10s %s\n' "host:" "$env_host"
     printf '  %-10s %s\n' "env-file:" "$RUN_LOCAL_STATE/ports.env"
   fi
+}
+
+# --- Process hygiene: cwd, stray dev PIDs, reconcile .run from live listeners ---
+
+run_pid_cwd() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 1
+  if [[ -r "/proc/$pid/cwd" ]]; then
+    if readlink -f "/proc/$pid/cwd" 2>/dev/null; then
+      return 0
+    fi
+    if readlink "/proc/$pid/cwd" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    local p
+    p="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+    if [[ -n "$p" ]]; then
+      printf '%s' "$p"
+      return 0
+    fi
+    p="$(lsof -a -p "$pid" -d cwd -n 2>/dev/null | awk 'NR==2 {
+      s=""
+      for (i = 9; i <= NF; i++) s = (s ? s " " : "") $i
+      if (s != "") print s
+    }')"
+    if [[ -n "${p//[[:space:]]/}" ]]; then
+      printf '%s' "$p"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Parent chain toward PID 1 (not including $1). Stops on cycles / launchd.
+run_pid_ancestor_pids() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 0
+  local seen=$'\n' cur ppid
+  cur="$pid"
+  while [[ -n "$cur" && "$cur" -gt 1 ]]; do
+    ppid="$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d '[:space:]')"
+    [[ -z "$ppid" || "$ppid" == "0" || "$ppid" == "1" || "$ppid" == "$cur" ]] && break
+    case "$seen" in
+      *$'\n'"$ppid"$'\n'*) break ;;
+    esac
+    seen+="${ppid}"$'\n'
+    printf '%s\n' "$ppid"
+    cur="$ppid"
+  done
+}
+
+# All descendant PIDs of $1 (not including $1). Uses pgrep -P when available.
+run_pid_descendants() {
+  local root="$1"
+  [[ -n "$root" ]] || return 0
+  command -v pgrep >/dev/null 2>&1 || return 0
+  local -a q=("$root")
+  local qi=0
+  while (( qi < ${#q[@]} )); do
+    local p="${q[qi]}"
+    qi=$((qi + 1))
+    local c
+    while IFS= read -r c; do
+      [[ -z "$c" ]] && continue
+      q+=("$c")
+      printf '%s\n' "$c"
+    done < <(pgrep -P "$p" 2>/dev/null || true)
+  done
+}
+
+# PIDs from .run/pids/*.pid that are alive, plus every descendant (managed tree).
+run_project_protected_pids() {
+  local f pid
+  local -a acc=()
+  shopt -s nullglob
+  for f in "$RUN_LOCAL_STATE/pids"/*.pid; do
+    pid="$(tr -d '[:space:]' <"$f" 2>/dev/null || true)"
+    [[ -n "$pid" ]] || continue
+    run_pid_alive "$pid" || continue
+    acc+=("$pid")
+    local d
+    while IFS= read -r d; do
+      [[ -n "$d" ]] && acc+=("$d")
+    done < <(run_pid_ancestor_pids "$pid")
+    while IFS= read -r d; do
+      [[ -n "$d" ]] && acc+=("$d")
+    done < <(run_pid_descendants "$pid")
+  done
+  shopt -u nullglob
+  if [[ ${#acc[@]} -eq 0 ]]; then
+    return 0
+  fi
+  printf '%s\n' "${acc[@]}" | awk 'NF' | sort -un
+}
+
+# True if cwd is the project root or a subdir, but not under project/node_modules.
+run_pid_cwd_under_project() {
+  local pid="$1"
+  local cwd base abs ok=0
+  cwd="$(run_pid_cwd "$pid" 2>/dev/null)" || return 1
+  base="$(cd "$RUN_PROJECT_ROOT" 2>/dev/null && pwd -P)" || base="$RUN_PROJECT_ROOT"
+  abs="$(cd "$cwd" 2>/dev/null && pwd -P)" || abs="$cwd"
+  case "$abs" in
+    "$base" | "$base"/*) ok=1 ;;
+  esac
+  if [[ "$ok" -eq 0 ]]; then
+    case "$cwd" in
+      "$RUN_PROJECT_ROOT" | "$RUN_PROJECT_ROOT"/*) ok=1 ;;
+    esac
+  fi
+  [[ "$ok" -eq 1 ]] || return 1
+  case "$abs" in
+    "$base/node_modules" | "$base/node_modules"/*) return 1 ;;
+  esac
+  case "$cwd" in
+    "$RUN_PROJECT_ROOT/node_modules" | "$RUN_PROJECT_ROOT/node_modules"/*) return 1 ;;
+  esac
+  return 0
+}
+
+# Stray dev-ish process: cwd under project (excluding node_modules), comm looks like a runtime.
+run_pid_is_stray_dev_candidate() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 1
+  run_pid_alive "$pid" || return 1
+  run_pid_cwd_under_project "$pid" || return 1
+  local comm args
+  comm="$(ps -p "$pid" -o comm= 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+  args="$(ps -p "$pid" -o args= 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  case "$comm" in
+    node | nodejs | bun) return 0 ;;
+    pnpm | npm | yarn) return 0 ;;
+  esac
+  case "$args" in
+    *next\ dev* | *next\ start* | *vite* | *nuxt* | *astro\ dev* | *remix*dev*) return 0 ;;
+  esac
+  return 1
+}
+
+# PIDs with cwd under this project (excluding node_modules) that look like dev runtimes.
+# Prefer pgrep (node-like binaries) instead of scanning every PID on the host.
+run_project_stray_candidate_pids() {
+  local seen=$'\n' pid raw
+  if command -v pgrep >/dev/null 2>&1; then
+    raw="$(
+      {
+        pgrep -x node 2>/dev/null || true
+        pgrep -x nodejs 2>/dev/null || true
+        pgrep -x bun 2>/dev/null || true
+        pgrep -x pnpm 2>/dev/null || true
+        pgrep -x npm 2>/dev/null || true
+        pgrep -x yarn 2>/dev/null || true
+      } 2>/dev/null | awk 'NF' | sort -un
+    )"
+    if [[ -n "$raw" ]]; then
+      while IFS= read -r pid; do
+        [[ -z "$pid" ]] && continue
+        (( pid > 1 )) || continue
+        run_pid_is_stray_dev_candidate "$pid" || continue
+        case "$seen" in
+          *$'\n'"$pid"$'\n'*) continue ;;
+        esac
+        seen+="${pid}"$'\n'
+        printf '%s\n' "$pid"
+      done <<<"$raw"
+      return 0
+    fi
+  fi
+  local psout line
+  if ! psout="$(ps axo 'pid=' 2>/dev/null)"; then
+    psout="$(ps -eo 'pid=' 2>/dev/null)" || return 1
+  fi
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    pid="$(printf '%s' "$line" | awk '{print $1+0}')"
+    (( pid > 1 )) || continue
+    run_pid_is_stray_dev_candidate "$pid" || continue
+    case "$seen" in
+      *$'\n'"$pid"$'\n'*) continue ;;
+    esac
+    seen+="${pid}"$'\n'
+    printf '%s\n' "$pid"
+  done <<<"$psout"
+}
+
+# Kill stray dev processes for this project (not in a live .run/pids tree). RUN_STRAY_DRY_RUN=1 prints only.
+run_project_stray_kill() {
+  local dry="${RUN_STRAY_DRY_RUN:-0}"
+  local prot
+  prot="$(run_project_protected_pids || true)"
+  local killed=0
+  local pid
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    grep -qxF "$pid" <<<"$prot" && continue
+    if [[ "$dry" == "1" ]]; then
+      echo "run_project_stray_kill: would kill pid $pid"
+      killed=$((killed + 1))
+      continue
+    fi
+    echo "run_project_stray_kill: killing stray pid $pid"
+    kill "$pid" 2>/dev/null || true
+    killed=$((killed + 1))
+  done < <(run_project_stray_candidate_pids)
+  RUN_LAST_STRAY_KILL_COUNT="$killed"
+  export RUN_LAST_STRAY_KILL_COUNT
+}
+
+run_read_ports_env() {
+  RUN_RECON_PORT=""
+  RUN_RECON_SVC=""
+  RUN_RECON_HOST=""
+  local f="${1:-$RUN_LOCAL_STATE/ports.env}"
+  [[ -f "$f" ]] || return 1
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    case "$line" in
+      PORT=*) RUN_RECON_PORT="${line#PORT=}" ;;
+      RUN_DEV_SERVICE=*) RUN_RECON_SVC="${line#RUN_DEV_SERVICE=}" ;;
+      HOST=*) RUN_RECON_HOST="${line#HOST=}" ;;
+    esac
+  done <"$f"
+  [[ -n "$RUN_RECON_PORT" ]] || return 1
+  [[ -n "$RUN_RECON_SVC" ]] || RUN_RECON_SVC="web"
+  return 0
+}
+
+# Point .run/pids/<service>.pid and ~/.run/ports/<port> at the process listening on PORT from .run/ports.env.
+run_project_reconcile_pidfiles() {
+  command -v lsof >/dev/null 2>&1 || {
+    echo "run_project_reconcile_pidfiles: lsof is required" >&2
+    return 1
+  }
+  run_read_ports_env "$RUN_LOCAL_STATE/ports.env" || {
+    echo "run_project_reconcile_pidfiles: could not read PORT from $RUN_LOCAL_STATE/ports.env" >&2
+    return 1
+  }
+  local port="$RUN_RECON_PORT"
+  local svc="$RUN_RECON_SVC"
+  [[ "$port" =~ ^[0-9]+$ ]] || {
+    echo "run_project_reconcile_pidfiles: invalid PORT=$port" >&2
+    return 1
+  }
+  local listener
+  listener="$(lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $2; exit}')"
+  [[ -n "$listener" ]] || {
+    echo "run_project_reconcile_pidfiles: nothing listening on TCP $port" >&2
+    return 1
+  }
+  run_pid_alive "$listener" || {
+    echo "run_project_reconcile_pidfiles: listener pid $listener is not running" >&2
+    return 1
+  }
+  if ! run_pid_cwd_under_project "$listener"; then
+    echo "run_project_reconcile_pidfiles: listener pid $listener cwd does not look like this project ($RUN_PROJECT_ROOT)" >&2
+    return 1
+  fi
+  mkdir -p "$RUN_LOCAL_STATE/pids"
+  printf '%s\n' "$listener" >"$RUN_LOCAL_STATE/pids/${svc}.pid"
+  run_port_register "$port" "$svc" "$listener"
+  if [[ -f "$RUN_LOCAL_STATE/claimed-ports" ]] && ! grep -qx "$port" "$RUN_LOCAL_STATE/claimed-ports" 2>/dev/null; then
+    printf '%s\n' "$port" >>"$RUN_LOCAL_STATE/claimed-ports"
+  fi
+  echo "run_project_reconcile_pidfiles: set ${svc}.pid=$listener and registered port $port"
 }

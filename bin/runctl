@@ -96,6 +96,8 @@ ${_y}Commands${_r}
   ${_c}stop${_r}  [dir]                   Stop daemons & release ports
   ${_c}status${_r} [dir]                  Show running state
   ${_c}ps${_r}                            List running programs with ports/projects
+  ${_c}reconcile${_r} [dir]               Sync ${_d}.run/pids/*.pid${_r} + port registry from listener on ${_c}PORT${_r} in ${_d}.run/ports.env${_r}
+  ${_c}stray kill${_r} [dir] [--dry-run]  Kill dev PIDs under this project not in a live ${_d}.run/pids${_r} tree ${_d}(cwd match; see help)${_r}
   ${_c}logs${_r} [dir] [service]         Tail .run/logs/<service>.log ${_d}(default: ${_c}RUNCTL_SERVICE${_r} or package name, else web)${_r}
   ${_c}ports${_r}                         List user-wide port registry (~/.run)
   ${_c}ports gc${_r}                      Clean up stale port claims
@@ -112,6 +114,8 @@ ${_y}Options${_r}
   ${_c}--script${_r} <name>               Package script to run ${_d}(default: dev)${_r}
   ${_c}--open${_r}                        After a successful start, open the app URL ${_d}(same as ${_c}runctl open${_r})${_r}
   ${_c}RUNCTL_PROJECT_ROOT${_r}           Repo root for .env + install/run/test ${_d}(default: cwd)${_r}
+  ${_c}RUNCTL_EXTERNAL_ADOPT${_r}        Before ${_c}start${_r}: ${_d}auto${_r} | ${_d}on${_r} | ${_d}off${_r} — reuse an existing dev listener ${_d}(default ${_c}auto${_r}: path contains ${_d}.../Projects/...${_r} or repo is under ${_c}RUNCTL_PROJECTS_ROOT${_r})${_r}
+  ${_c}RUNCTL_PROJECTS_ROOT${_r}         Optional root dir; with ${_c}auto${_r} adopt, limits reuse to repos under this path${_r}
   ${_c}version${_r} | ${_c}--version${_r} | ${_c}-v${_r}     Print version and package install path
   ${_c}--help${_r}, ${_c}-h${_r}                     Show this help
 
@@ -262,6 +266,117 @@ cmd_ps() {
     echo ""
     run_global_list_running
   fi
+}
+
+cmd_stray_kill_usage() {
+  cat <<EOF
+${_b}runctl stray kill${_r} — remove orphan dev processes for a repo
+
+${_y}Usage:${_r}  runctl stray kill [dir] [--dry-run]
+
+${_y}Description${_r}
+  Finds processes whose ${_b}cwd${_r} is this project (or a subdir other than
+  ${_d}node_modules${_r}) and whose command looks like a dev runtime (${_d}node, bun, pnpm, …${_r}),
+  then kills any PID that is ${_b}not${_r} in a live ${_d}.run/pids/*.pid${_r} tree
+  (${_d}recorded PID + ancestors + descendants via ${_c}ps${_r} / ${_c}pgrep -P${_r}).
+
+  ${_c}--dry-run${_r} lists PIDs that would be sent ${_c}SIGTERM${_r} without killing.
+
+${_y}See also:${_r}  ${_c}runctl stop${_r}  ${_d}(graceful stop via saved pids)${_r}  ·  ${_c}runctl reconcile${_r}
+EOF
+}
+
+cmd_stray() {
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    -h | --help)
+      cmd_stray_kill_usage
+      exit 0
+      ;;
+    kill)
+      local dry=0 proj=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --dry-run) dry=1; shift ;;
+          -h | --help)
+            cmd_stray_kill_usage
+            exit 0
+            ;;
+          -*)
+            echo "runctl stray kill: unknown option: $1" >&2
+            exit 1
+            ;;
+          *)
+            if [[ -d "$1" ]]; then
+              proj="$(cd "$1" && pwd)" || exit 1
+              shift
+            else
+              echo "runctl stray kill: not a directory: $1" >&2
+              exit 1
+            fi
+            ;;
+        esac
+      done
+      [[ -n "$proj" ]] || proj="$(pwd)"
+      # shellcheck source=../lib/run-lib.sh
+      source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+      run_project_init "$proj"
+      RUN_STRAY_DRY_RUN="$dry" run_with_lock run_project_stray_kill
+      local n="${RUN_LAST_STRAY_KILL_COUNT:-0}"
+      if [[ "$dry" == "1" ]]; then
+        echo "runctl stray kill: dry-run complete ($n pid(s) would be killed)"
+      else
+        echo "runctl stray kill: done ($n pid(s) signaled)"
+      fi
+      ;;
+    "")
+      cmd_stray_kill_usage
+      exit 1
+      ;;
+    *)
+      echo "runctl stray: unknown subcommand: $sub (try: stray kill)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_reconcile() {
+  local proj=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h | --help)
+        cat <<EOF
+${_b}runctl reconcile${_r} — refresh ${_d}.run${_r} state from a live listener
+
+${_y}Usage:${_r}  runctl reconcile [dir]
+
+Reads ${_c}.run/ports.env${_r} (${_d}PORT${_r}, ${_d}RUN_DEV_SERVICE${_r}), finds the PID listening on that TCP port,
+checks cwd is this project, then writes ${_d}.run/pids/<service>.pid${_r} and updates the user port registry.
+Requires ${_c}lsof${_r}.
+EOF
+        exit 0
+        ;;
+      -*)
+        echo "runctl reconcile: unknown option: $1" >&2
+        exit 1
+        ;;
+      *)
+        if [[ -d "$1" ]]; then
+          proj="$(cd "$1" && pwd)" || exit 1
+          shift
+        else
+          echo "runctl reconcile: not a directory: $1" >&2
+          exit 1
+        fi
+        ;;
+    esac
+  done
+  [[ -n "$proj" ]] || proj="$(pwd)"
+  # shellcheck source=../lib/run-lib.sh
+  source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_project_init "$proj"
+  run_with_lock run_project_reconcile_pidfiles
 }
 
 cmd_env() {
@@ -794,6 +909,8 @@ main() {
     stop)     cmd_stop "$@" ;;
     status)   cmd_status "$@" ;;
     ps)       cmd_ps "$@" ;;
+    reconcile) cmd_reconcile "$@" ;;
+    stray)    cmd_stray "$@" ;;
     logs)     cmd_logs "$@" ;;
     ports)    cmd_ports "$@" ;;
     env)      cmd_env "$@" ;;
