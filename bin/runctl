@@ -275,6 +275,7 @@ cmd_ports() {
 cmd_ps() {
   # shellcheck source=../lib/run-lib.sh
   source "$RUNCTL_PKG_ROOT/lib/run-lib.sh"
+  run_global_reconcile_projects_from_live_listeners
   run_global_list_running
   local stale="${RUN_LAST_STALE_COUNT:-0}"
   if [[ "$stale" =~ ^[0-9]+$ ]] && (( stale > 0 )); then
@@ -287,6 +288,8 @@ cmd_ps() {
     echo ""
     run_global_list_running
   fi
+  echo ""
+  run_global_list_live_listeners
 }
 
 cmd_stray_kill_usage() {
